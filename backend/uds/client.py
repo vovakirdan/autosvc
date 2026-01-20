@@ -4,6 +4,7 @@ import time
 from typing import List
 
 from backend.transport.base import CanTransport
+from backend.transport.isotp import IsoTpError, IsoTpTimeoutError, IsoTpTransport
 from backend.uds.dtc import Dtc, decode_dtc, status_from_byte
 
 
@@ -12,22 +13,30 @@ class UdsError(Exception):
 
 
 class UdsClient:
-    def __init__(self, transport: CanTransport, timeout_ms: int = 200) -> None:
+    def __init__(self, transport: CanTransport, p2_ms: int = 50, p2_star_ms: int = 5000) -> None:
         self._transport = transport
-        self._timeout_ms = timeout_ms
+        self._p2_ms = int(p2_ms)
+        self._p2_star_ms = int(p2_star_ms)
+        self._active_ecu: str | None = None
+
+    def request(self, sid: int, data: bytes = b"") -> bytes:
+        if self._active_ecu is None:
+            raise UdsError("ecu not set")
+        return self._request_for_ecu(self._active_ecu, sid, data)
 
     def diagnostic_session_control(self, ecu: str, session_type: int = 0x01) -> bool:
-        response = self._request(ecu, bytes([0x10, session_type]))
-        if response is None:
+        self._active_ecu = ecu
+        try:
+            response = self.request(0x10, bytes([session_type]))
+        except UdsError:
             return False
         if response[0] == 0x7F:
             return False
         return response[:2] == bytes([0x50, session_type])
 
     def read_dtcs(self, ecu: str) -> List[Dtc]:
-        response = self._request(ecu, bytes([0x19, 0x02, 0xFF]))
-        if response is None:
-            raise UdsError("no response")
+        self._active_ecu = ecu
+        response = self.request(0x19, b"\x02\xFF")
         if response[0] == 0x7F:
             raise UdsError(f"negative response 0x{response[2]:02X}")
         if len(response) < 3 or response[0] != 0x59 or response[1] != 0x02:
@@ -42,29 +51,49 @@ class UdsClient:
         return dtcs
 
     def clear_dtcs(self, ecu: str) -> None:
-        response = self._request(ecu, bytes([0x14, 0xFF, 0xFF, 0xFF]))
-        if response is None:
-            raise UdsError("no response")
+        self._active_ecu = ecu
+        response = self.request(0x14, b"\xFF\xFF\xFF")
         if response[0] == 0x7F:
             raise UdsError(f"negative response 0x{response[2]:02X}")
         if response[0] != 0x54:
             raise UdsError("unexpected response")
 
-    def _request(self, ecu: str, payload: bytes) -> bytes | None:
+    def _request_for_ecu(self, ecu: str, sid: int, data: bytes) -> bytes:
+        payload = bytes([sid]) + data
         req_id, resp_id = self._ecu_ids(ecu)
-        self._transport.send(req_id, payload)
-        deadline = time.monotonic() + (self._timeout_ms / 1000.0)
-        while time.monotonic() < deadline:
-            remaining = int((deadline - time.monotonic()) * 1000)
-            if remaining <= 0:
-                break
-            frame = self._transport.recv(remaining)
-            if frame is None:
-                break
-            if frame.can_id != resp_id:
-                continue
-            return frame.data
-        return None
+        isotp = IsoTpTransport(self._transport, req_id, resp_id, timeout_ms=self._p2_ms)
+        try:
+            response = isotp.request(payload)
+        except IsoTpTimeoutError as exc:
+            raise UdsError("timeout waiting for response") from exc
+        except IsoTpError as exc:
+            raise UdsError(str(exc)) from exc
+        if not response:
+            raise UdsError("empty response")
+        if self._is_response_pending(response, sid):
+            response = self._wait_for_pending(isotp, sid)
+        return response
+
+    def _wait_for_pending(self, isotp: IsoTpTransport, sid: int) -> bytes:
+        deadline = time.monotonic() + (self._p2_star_ms / 1000.0)
+        while True:
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                raise UdsError("timeout waiting for response")
+            isotp.timeout_ms = remaining_ms
+            try:
+                response = isotp.recv_response()
+            except IsoTpTimeoutError as exc:
+                raise UdsError("timeout waiting for response") from exc
+            except IsoTpError as exc:
+                raise UdsError(str(exc)) from exc
+            if not response:
+                raise UdsError("empty response")
+            if not self._is_response_pending(response, sid):
+                return response
+
+    def _is_response_pending(self, payload: bytes, sid: int) -> bool:
+        return len(payload) >= 3 and payload[0] == 0x7F and payload[1] == sid and payload[2] == 0x78
 
     def _ecu_ids(self, ecu: str) -> tuple[int, int]:
         ecu_int = int(ecu, 16)
