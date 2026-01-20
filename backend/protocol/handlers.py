@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
+from backend.dtc.decode import decode_dtcs
 from backend.uds.client import UdsClient
 from backend.vehicle.scan import scan_ecus
 
@@ -18,7 +20,9 @@ def handle_request(request: Dict[str, Any], uds_client: UdsClient) -> Dict[str, 
     if cmd == "read_dtcs":
         ecu = _parse_ecu(request.get("ecu"))
         dtcs = uds_client.read_dtcs(ecu)
-        return {"ok": True, "dtcs": [dtc.to_dict() for dtc in dtcs]}
+        raw_dtcs = [dtc.raw_tuple() for dtc in dtcs]
+        decoded = decode_dtcs(raw_dtcs, os.getenv("AUTOSVC_BRAND"))
+        return {"ok": True, "dtcs": decoded}
     if cmd == "clear_dtcs":
         ecu = _parse_ecu(request.get("ecu"))
         uds_client.clear_dtcs(ecu)
