@@ -1,0 +1,11 @@
+{
+  "01": "Engine",
+  "02": "Transmission",
+  "03": "ABS",
+  "08": "HVAC",
+  "09": "Central Electronics",
+  "15": "Airbags",
+  "17": "Instruments",
+  "19": "CAN Gateway"
+}
+

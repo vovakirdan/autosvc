@@ -6,12 +6,13 @@
   "nodes": [
     {
       "ecu": "01",
-      "ecu_name": "Unknown ECU"
+      "ecu_name": "Engine"
     },
     {
       "ecu": "03",
-      "ecu_name": "Unknown ECU"
+      "ecu_name": "ABS"
     }
   ],
   "ok": true
 }
+

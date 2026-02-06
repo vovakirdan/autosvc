@@ -8,3 +8,6 @@ class BrandModule:
         """Return a description override for a formatted DTC code, or None."""
         raise NotImplementedError
 
+    def ecu_name(self, ecu: str) -> str | None:
+        """Return a human-readable ECU name for a diagnostic address (e.g. '01'), or None."""
+        return None

@@ -13,11 +13,13 @@ class EcuNode:
     rx_id: int  # physical response CAN id
     can_id_mode: str  # "11bit"|"29bit"
     uds_confirmed: bool
+    ecu_name: str = "Unknown ECU"
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "ecu": self.ecu,
+            "ecu_name": self.ecu_name,
             "tx_id": int(self.tx_id),
             "rx_id": int(self.rx_id),
             "can_id_mode": self.can_id_mode,

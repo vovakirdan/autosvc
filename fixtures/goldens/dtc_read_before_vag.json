@@ -1,11 +1,11 @@
 {
   "dtcs": [
     {
-      "brand": "generic",
+      "brand": "vag",
       "code": "P2002",
       "description": "Diesel particulate filter efficiency below threshold",
       "ecu": "01",
-      "ecu_name": "Unknown ECU",
+      "ecu_name": "Engine",
       "flags": [
         "test_failed"
       ],
@@ -16,11 +16,11 @@
       "system": "P"
     },
     {
-      "brand": "generic",
+      "brand": "vag",
       "code": "P0171",
-      "description": "Unknown DTC",
+      "description": "System too lean (Bank 1)",
       "ecu": "01",
-      "ecu_name": "Unknown ECU",
+      "ecu_name": "Engine",
       "flags": [
         "test_failed_this_operation_cycle"
       ],

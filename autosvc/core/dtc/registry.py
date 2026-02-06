@@ -31,3 +31,11 @@ def describe(code: str, brand: str | None = None) -> str | None:
             return description
     return None
 
+
+def describe_with_brand(code: str, brand: str | None = None) -> tuple[str | None, str]:
+    """Return (description, brand_name) for the first module that matches."""
+    for module in get_modules(brand):
+        description = module.describe(code)
+        if description:
+            return description, str(getattr(module, "name", "generic")) or "generic"
+    return None, "generic"

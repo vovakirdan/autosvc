@@ -45,9 +45,33 @@ The output is JSON with fields like:
 
 - `code` (example `P0420`)
 - `status` (`active|pending|stored`)
-- `description` (best-effort registry lookup)
+- `description` (best-effort registry lookup; brand-specific if enabled)
 - `flags`, `status_byte` (debugging)
 - `severity` (heuristic)
+
+## Generic vs VAG-Specific Descriptions
+
+By default, `autosvc` uses the generic (brand-agnostic) description registry.
+
+If you work primarily with VAG vehicles, you can enable VAG semantics:
+
+- In-process (env var):
+
+```bash
+AUTOSVC_BRAND=vag uv run autosvc dtc read --ecu 01 --can can0
+```
+
+- Daemon:
+
+```bash
+uv run autosvc daemon --can can0 --sock /tmp/autosvc.sock --brand vag
+uv run autosvc --connect /tmp/autosvc.sock dtc read --ecu 01
+```
+
+Notes:
+
+- VAG descriptions are offline and curated. No network lookups are performed.
+- Coverage is intentionally incomplete. Unknown codes fall back to generic or to `Unknown DTC`.
 
 ## Clearing DTCs
 
@@ -75,4 +99,3 @@ Practical notes:
 
 Many vehicles expose a conventional "engine ECU" around ECU address `01` in the 11-bit scheme, but do not assume it.
 Use `autosvc scan` output and read DTCs from any ECU that responds.
-

@@ -8,6 +8,7 @@
       {
         "can_id_mode": "11bit",
         "ecu": "01",
+        "ecu_name": "Unknown ECU",
         "notes": [
           "seen:functional",
           "seen:physical"
@@ -19,6 +20,7 @@
       {
         "can_id_mode": "11bit",
         "ecu": "03",
+        "ecu_name": "Unknown ECU",
         "notes": [
           "seen:functional",
           "seen:physical"
@@ -30,4 +32,3 @@
     ]
   }
 }
-

@@ -268,7 +268,8 @@ def _run_inprocess(
                     probe_session=probe_session,
                 )
             )
-            return {"ok": True, "ecus": [n.ecu for n in topo.nodes]}
+            nodes = [{"ecu": n.ecu, "ecu_name": getattr(n, "ecu_name", "Unknown ECU")} for n in topo.nodes]
+            return {"ok": True, "ecus": [n.ecu for n in topo.nodes], "nodes": nodes}
         if op == "scan_topology":
             topo = service.scan_topology(
                 DiscoveryConfig(

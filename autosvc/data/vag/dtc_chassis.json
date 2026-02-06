@@ -1,0 +1,13 @@
+{
+  "C0035": "Left front wheel speed sensor",
+  "C0040": "Right front wheel speed sensor",
+  "C0045": "Left rear wheel speed sensor",
+  "C0050": "Right rear wheel speed sensor",
+  "C0110": "ABS pump motor circuit",
+  "C0121": "ABS valve relay circuit",
+  "C0131": "Brake pressure sensor circuit",
+  "C0545": "Steering angle sensor",
+  "C0550": "Control module malfunction",
+  "C1234": "Wheel speed sensor rear left input circuit"
+}
+

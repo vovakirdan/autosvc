@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from autosvc.core.dtc.format import code24_to_raw_hex, uds_dtc_to_sae
-from autosvc.core.dtc.registry import describe
+from autosvc.core.dtc.registry import describe_with_brand
 from autosvc.core.dtc.status import decode_status_byte
 
 
@@ -11,7 +11,8 @@ def decode_dtcs(raw_dtcs: list[tuple[int, int]], brand: str | None) -> list[dict
         code = uds_dtc_to_sae(code24)
         status_info = decode_status_byte(status_byte)
         status = _status_from_flags(status_info)
-        description = describe(code, brand) or "Unknown DTC"
+        description, desc_brand = describe_with_brand(code, brand)
+        description = description or "Unknown DTC"
         system = code[0]
         severity = _severity(system, code, status_info)
         decoded.append(
@@ -22,6 +23,7 @@ def decode_dtcs(raw_dtcs: list[tuple[int, int]], brand: str | None) -> list[dict
                 "status_byte": int(status_byte) & 0xFF,
                 "flags": status_info["flags"],
                 "description": description,
+                "brand": desc_brand,
                 "system": system,
                 "severity": severity,
             }
@@ -45,4 +47,3 @@ def _severity(system: str, code: str, status_info: dict[str, object]) -> str:
     if code.startswith("P0") and status_info.get("confirmed_dtc"):
         return "warning"
     return "info"
-

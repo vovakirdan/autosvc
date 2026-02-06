@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from autosvc.core.dtc.decode import decode_dtcs
+from autosvc.core.dtc.registry import get_modules
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
 from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
@@ -31,13 +32,20 @@ class DiagnosticService:
         return [node.ecu for node in topo.nodes]
 
     def scan_topology(self, config: DiscoveryConfig) -> Topology:
-        return _scan_topology(self._transport, config, can_interface=self._can_interface)
+        topo = _scan_topology(self._transport, config, can_interface=self._can_interface)
+        for node in topo.nodes:
+            node.ecu_name = _resolve_ecu_name(node.ecu, self._brand)
+        return topo
 
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
         ecu_id = _normalize_ecu(ecu)
         dtcs = self._uds.read_dtcs(ecu_id)
         raw_dtcs = [dtc.raw_tuple() for dtc in dtcs]
         decoded = decode_dtcs(raw_dtcs, self._brand)
+        ecu_name = _resolve_ecu_name(ecu_id, self._brand)
+        for item in decoded:
+            item["ecu"] = ecu_id
+            item["ecu_name"] = ecu_name
         return decoded
 
     def clear_dtcs(self, ecu: str) -> None:
@@ -78,3 +86,14 @@ def _normalize_ecu(value: str) -> str:
     if ecu_int < 0 or ecu_int > 0xFF:
         raise ValueError("ecu out of range")
     return f"{ecu_int:02X}"
+
+
+def _resolve_ecu_name(ecu: str, brand: str | None) -> str:
+    for module in get_modules(brand):
+        try:
+            name = module.ecu_name(ecu)
+        except Exception:
+            name = None
+        if name:
+            return str(name)
+    return "Unknown ECU"

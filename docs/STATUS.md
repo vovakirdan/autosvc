@@ -28,6 +28,10 @@ Date: 2026-02-06
   - Brand overrides:
     - Generic registry
     - VAG overrides (optional via `AUTOSVC_BRAND=vag` or daemon `--brand vag`)
+    - VAG semantics v1 (offline, deterministic):
+      - ECU name mapping (address -> name) using curated JSON data
+      - DTC description dictionaries for `P`/`U`/`C`/`B` starter coverage
+      - Generic fallback for unknown codes remains intact
   - Deterministic record/replay transports for offline runs
   - Live data (minimal):
     - tick-based watch list (`autosvc watch`) emitting deterministic JSONL events
@@ -38,6 +42,38 @@ Date: 2026-02-06
   - Textual TUI (`autosvc tui`)
   - Optional daemon (`autosvc daemon`) using JSONL over Unix socket
 
+## VAG Semantics v1
+
+VAG semantics are optional and fully offline. They are enabled by selecting the `vag` brand:
+
+- in-process:
+
+```bash
+AUTOSVC_BRAND=vag uv run autosvc scan --can can0
+AUTOSVC_BRAND=vag uv run autosvc dtc read --ecu 01 --can can0
+```
+
+- daemon:
+
+```bash
+uv run autosvc daemon --can can0 --sock /tmp/autosvc.sock --brand vag
+uv run autosvc --connect /tmp/autosvc.sock scan
+```
+
+What is covered (v1):
+
+- ECU names from a VAG-common address map (`autosvc/data/vag/ecu_map.json`)
+- Curated, offline DTC descriptions for:
+  - `P` (powertrain), `U` (network), `C` (chassis), `B` (body)
+- Generic fallback remains for unknown codes
+
+What is NOT covered yet:
+
+- ODX parsing
+- VIN/model-specific decoding
+- freeze-frame / extended DTC context
+- coding/adaptations and flashing/programming
+
 ## What Is Tested Via Emulator
 
 The Debian emulator validates:
@@ -45,8 +81,10 @@ The Debian emulator validates:
 - ISO-TP multi-frame ECU responses (DTC list)
 - UDS service flow for the scenario:
   - scan
+  - scan (VAG brand semantics: ECU names)
   - topology scan (Discovery 2.0)
   - read_dtcs
+  - read_dtcs (VAG brand semantics: curated descriptions)
   - clear_dtcs
   - read_dtcs
   - read_did (VIN)
@@ -104,6 +142,8 @@ sudo tools/autotest.sh vcan0 01
 - ECU discovery uses deterministic defaults (small physical range + functional sweep)
 - UDS coverage is intentionally minimal (service diagnostics only)
 - No security access, no long sessions, and live data coverage is minimal
+- VAG semantics are offline and curated (no ODX, no online databases, no freeze-frame)
+- No coding/adaptations and no flashing/programming
 
 ## Manual Coverage vs Features
 

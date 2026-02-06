@@ -1,0 +1,13 @@
+{
+  "B0020": "Driver frontal deployment loop",
+  "B0051": "Passenger frontal deployment loop",
+  "B1000": "Control module internal fault",
+  "B1010": "Control module configuration error",
+  "B1101": "Battery voltage",
+  "B1211": "Ignition input circuit",
+  "B2000": "ECU configuration error",
+  "B2010": "ECU memory error",
+  "B2610": "A/C refrigerant pressure sensor circuit",
+  "B2620": "A/C compressor control circuit"
+}
+

@@ -19,3 +19,4 @@ autosvc-ecu-sim = "autosvc.emulator.ecu_sim:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["autosvc"]
+include = ["autosvc/data/**"]

@@ -5,6 +5,7 @@ from typing import Any
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.uds.did import parse_did
+from autosvc.core.vehicle.discovery import DiscoveryConfig
 
 
 def decode_json_line(line: bytes) -> dict[str, Any]:
@@ -38,8 +39,12 @@ def handle_request(request: dict[str, Any], service: DiagnosticService) -> dict[
         return error("missing cmd")
 
     if cmd == "scan_ecus":
-        ecus = service.scan_ecus()
-        return {"ok": True, "ecus": ecus}
+        # Keep the original `ecus` list for compatibility, but include lightweight node metadata.
+        can_id_mode = str(getattr(service, "_can_id_mode", "11bit"))
+        topo = service.scan_topology(DiscoveryConfig(can_id_mode=can_id_mode))
+        ecus = [n.ecu for n in topo.nodes]
+        nodes = [{"ecu": n.ecu, "ecu_name": getattr(n, "ecu_name", "Unknown ECU")} for n in topo.nodes]
+        return {"ok": True, "ecus": ecus, "nodes": nodes}
 
     if cmd == "read_dtcs":
         ecu = request.get("ecu")

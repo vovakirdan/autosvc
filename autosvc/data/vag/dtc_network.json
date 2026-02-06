@@ -1,0 +1,18 @@
+{
+  "U0100": "Lost communication with ECM/PCM",
+  "U0101": "Lost communication with TCM",
+  "U0102": "Lost communication with transfer case control module",
+  "U0103": "Lost communication with gear shift module",
+  "U0105": "Lost communication with fuel injector control module",
+  "U0121": "Lost communication with ABS control module",
+  "U0122": "Lost communication with vehicle dynamics control module",
+  "U0123": "Lost communication with yaw rate sensor module",
+  "U0140": "Lost communication with body control module",
+  "U0155": "Lost communication with instrument panel cluster",
+  "U0164": "Lost communication with HVAC control module",
+  "U0415": "Invalid data received from ABS control module",
+  "U0422": "Invalid data received from body control module",
+  "U1121": "Missing message",
+  "U1123": "Invalid message"
+}
+

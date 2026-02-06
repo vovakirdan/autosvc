@@ -67,13 +67,28 @@ class IpcApi:
     def scan_topology(self) -> Topology:
         resp = self._client.request({"cmd": "scan_ecus"})
         _raise_on_error(resp)
-        ecus = list(resp.get("ecus") or [])
+        nodes_raw = resp.get("nodes")
+        entries: list[tuple[str, str]] = []
+        if isinstance(nodes_raw, list):
+            for item in nodes_raw:
+                if not isinstance(item, dict):
+                    continue
+                ecu = item.get("ecu")
+                ecu_name = item.get("ecu_name")
+                if isinstance(ecu, str):
+                    entries.append((ecu.upper(), str(ecu_name) if isinstance(ecu_name, str) else "Unknown ECU"))
+        if not entries:
+            ecus = list(resp.get("ecus") or [])
+            for ecu in sorted({str(e).upper() for e in ecus}):
+                entries.append((ecu, "Unknown ECU"))
+
         nodes: list[EcuNode] = []
-        for ecu in sorted({str(e).upper() for e in ecus}):
+        for ecu, ecu_name in sorted(set(entries), key=lambda t: t[0]):
             tx_id, rx_id = ids_for_ecu(ecu, self._can_id_mode)
             nodes.append(
                 EcuNode(
                     ecu=ecu,
+                    ecu_name=ecu_name,
                     tx_id=tx_id,
                     rx_id=rx_id,
                     can_id_mode=self._can_id_mode,
@@ -193,6 +208,7 @@ class EcuScanScreen(Screen[None]):
         for node in topo.nodes:
             label = (
                 f"{node.ecu}  "
+                f"{node.ecu_name}  "
                 f"tx=0x{node.tx_id:X}  "
                 f"rx=0x{node.rx_id:X}  "
                 f"uds={'yes' if node.uds_confirmed else 'no'}"
