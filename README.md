@@ -8,6 +8,8 @@ We do:
 - ECU discovery (basic scan)
 - Read DTCs and decode them into human-friendly records
 - Clear DTCs
+- Read a small set of UDS live data (ReadDataByIdentifier / DIDs)
+- Watch/poll live data and print JSONL events (tick-based)
 
 We don't:
 - Flash ECUs
@@ -41,7 +43,14 @@ uv run autosvc scan --can vcan0
 uv run autosvc dtc read --ecu 01 --can vcan0
 uv run autosvc dtc clear --ecu 01 --can vcan0
 uv run autosvc dtc read --ecu 01 --can vcan0
+uv run autosvc did read --ecu 01 --did F190 --can vcan0
+uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 ```
+
+## How To Diagnose A Real Car
+
+- Setup: `docs/manual/SETUP.md`
+- First diagnostic session: `docs/manual/FIRST_DIAG.md`
 
 ## Run The TUI (Textual)
 
@@ -105,4 +114,4 @@ uv run autosvc daemon --can vcan0 --sock /tmp/autosvc.sock --brand vag
 - `docs/ARCHITECTURE.md`
 - `docs/EMULATOR.md`
 - `docs/STATUS.md`
-
+- `docs/manual/README.md`

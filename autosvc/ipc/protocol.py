@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from autosvc.core.service import DiagnosticService
+from autosvc.core.uds.did import parse_did
 
 
 def decode_json_line(line: bytes) -> dict[str, Any]:
@@ -54,5 +55,16 @@ def handle_request(request: dict[str, Any], service: DiagnosticService) -> dict[
         service.clear_dtcs(ecu)
         return {"ok": True}
 
-    return error("unknown cmd")
+    if cmd == "read_did":
+        ecu = request.get("ecu")
+        if not isinstance(ecu, str):
+            return error("ecu must be hex string")
+        did_raw = request.get("did")
+        try:
+            did_int = parse_did(did_raw)  # accepts str or int
+        except Exception:
+            return error("did must be hex string")
+        item = service.read_did(ecu, did_int)
+        return {"ok": True, "item": item}
 
+    return error("unknown cmd")

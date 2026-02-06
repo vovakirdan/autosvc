@@ -9,6 +9,7 @@ from autosvc.ipc.unix_server import JsonlUnixServer
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--can", default="vcan0", help="SocketCAN interface (e.g. can0, vcan0)")
+    parser.add_argument("--can-id-mode", choices=["11bit", "29bit"], default="11bit")
     parser.add_argument("--sock", default="/tmp/autosvc.sock", help="Unix socket path")
     parser.add_argument("--brand", default=None, help="Optional brand registry (e.g. vag)")
 
@@ -18,8 +19,13 @@ def main(argv: list[str] | None = None) -> None:
     build_parser(parser)
     args = parser.parse_args(argv)
 
-    transport = SocketCanTransport(channel=args.can)
-    service = DiagnosticService(transport, brand=args.brand)
+    transport = SocketCanTransport(channel=args.can, is_extended_id=(args.can_id_mode == "29bit"))
+    service = DiagnosticService(
+        transport,
+        brand=args.brand,
+        can_interface=args.can,
+        can_id_mode=args.can_id_mode,
+    )
     server = JsonlUnixServer(args.sock, service)
     try:
         server.serve_forever()
@@ -32,4 +38,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

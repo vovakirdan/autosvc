@@ -21,6 +21,7 @@ class AutosvcApi(Protocol):
     def scan_topology(self) -> Topology: ...
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]: ...
     def clear_dtcs(self, ecu: str) -> None: ...
+    def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]: ...
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,9 @@ class InProcessApi:
 
     def clear_dtcs(self, ecu: str) -> None:
         self._service.clear_dtcs(ecu)
+
+    def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]:
+        return self._service.read_dids(ecu, dids)
 
 
 class IpcApi:
@@ -92,6 +96,16 @@ class IpcApi:
     def clear_dtcs(self, ecu: str) -> None:
         resp = self._client.request({"cmd": "clear_dtcs", "ecu": ecu})
         _raise_on_error(resp)
+
+    def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        for did in dids:
+            resp = self._client.request({"cmd": "read_did", "ecu": ecu, "did": f"{int(did) & 0xFFFF:04X}"})
+            _raise_on_error(resp)
+            item = resp.get("item")
+            if isinstance(item, dict):
+                out.append(item)
+        return out
 
 
 def _raise_on_error(resp: dict[str, Any]) -> None:
@@ -201,6 +215,7 @@ class DtcScreen(Screen[None]):
                 yield Button("Back", id="back")
                 yield Button("Refresh", id="refresh")
                 yield Button("Clear DTCs", id="clear")
+                yield Button("Live", id="live")
             yield Static("", id="status")
             table = DataTable(id="dtc_table")
             table.add_columns("Code", "Status", "Severity", "Description")
@@ -218,6 +233,9 @@ class DtcScreen(Screen[None]):
             return
         if event.button.id == "clear":
             self._clear()
+            return
+        if event.button.id == "live":
+            self.app.push_screen(LiveScreen(self._api, self._ecu))
 
     def _refresh(self) -> None:
         status = self.query_one("#status", Static)
@@ -251,6 +269,58 @@ class DtcScreen(Screen[None]):
             return
         status.update("Cleared. Refreshing...")
         self._refresh()
+
+
+class LiveScreen(Screen[None]):
+    _DIDS: list[int] = [0xF190, 0xF187, 0x1234]
+
+    def __init__(self, api: AutosvcApi, ecu: str) -> None:
+        super().__init__()
+        self._api = api
+        self._ecu = ecu
+        self._tick = 0
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"Live data (ECU {self._ecu})", id="title")
+        with Vertical(id="panel"):
+            with Horizontal():
+                yield Button("Back", id="back")
+                yield Button("Refresh", id="refresh")
+            yield Static("", id="status")
+            table = DataTable(id="live_table")
+            table.add_columns("DID", "Name", "Value", "Unit")
+            yield table
+
+    def on_mount(self) -> None:
+        self._refresh()
+        # Poll in a simple tick loop. This is synchronous and may block briefly.
+        self.set_interval(0.5, self._refresh)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.app.pop_screen()
+            return
+        if event.button.id == "refresh":
+            self._refresh()
+
+    def _refresh(self) -> None:
+        self._tick += 1
+        status = self.query_one("#status", Static)
+        table = self.query_one("#live_table", DataTable)
+        status.update(f"Tick {self._tick}")
+        try:
+            items = self._api.read_dids(self._ecu, self._DIDS)
+        except Exception as exc:
+            status.update(f"Error: {exc}")
+            return
+        table.clear()
+        for item in items:
+            table.add_row(
+                str(item.get("did", "")),
+                str(item.get("name", "")),
+                str(item.get("value", "")),
+                str(item.get("unit", "")),
+            )
 
 
 def main(argv: list[str] | None = None) -> None:

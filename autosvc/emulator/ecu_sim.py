@@ -161,6 +161,9 @@ def _isotp_send_response(
 class EcuSimulator:
     ecu_int: int
     dtcs: list[tuple[str, str]]
+    vin: str
+    part_number: str
+    rpm_reads: int = 0
 
     def ecu(self) -> str:
         return f"{self.ecu_int:02X}"
@@ -189,6 +192,26 @@ class EcuSimulator:
         if sid == 0x10:
             session_type = payload[1] if len(payload) > 1 else 0x01
             return bytes([0x50, session_type])
+
+        if sid == 0x22:
+            # ReadDataByIdentifier (DID). Keep behavior deterministic for golden tests:
+            # - VIN and part number are constant per ECU
+            # - RPM DID 0x1234 is scripted and advances only when 0x1234 is read
+            if len(payload) < 3:
+                return bytes([0x7F, sid, 0x13])  # incorrect message length or invalid format
+            did = (payload[1] << 8) | payload[2]
+            if did == 0xF190:
+                data = self.vin.encode("ascii", errors="replace")
+            elif did == 0xF187:
+                data = self.part_number.encode("ascii", errors="replace")
+            elif did == 0x1234:
+                self.rpm_reads += 1
+                # Produce a deterministic sequence: 850, 900, 950, ...
+                rpm = 850 + ((self.rpm_reads - 1) * 50)
+                data = int(rpm).to_bytes(2, byteorder="big", signed=False)
+            else:
+                return bytes([0x7F, sid, 0x31])  # request out of range
+            return bytes([0x62, payload[1], payload[2]]) + data
 
         if sid == 0x19:
             if len(payload) < 2 or payload[1] != 0x02:
@@ -231,7 +254,9 @@ def main(argv: list[str] | None = None) -> None:
             dtcs = []
         else:
             dtcs = []
-        ecus.append(EcuSimulator(ecu_int=ecu_int, dtcs=dtcs))
+        vin = "WVWZZZ00000000001"
+        part_number = f"AUTOSVC-ECU{ecu_int:02X}"
+        ecus.append(EcuSimulator(ecu_int=ecu_int, dtcs=dtcs, vin=vin, part_number=part_number))
 
     request_map = {ecu.request_id(args.can_id_mode): ecu for ecu in ecus}
 

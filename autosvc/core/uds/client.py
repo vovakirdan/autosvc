@@ -31,6 +31,9 @@ class UdsClient:
             raise UdsError("ecu not set")
         return self._request_for_ecu(self._active_ecu, sid, data)
 
+    def set_ecu(self, ecu: str) -> None:
+        self._active_ecu = ecu
+
     def diagnostic_session_control(self, ecu: str, session_type: int = 0x01) -> bool:
         self._active_ecu = ecu
         try:

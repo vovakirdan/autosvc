@@ -64,6 +64,45 @@ PY
   return 1
 }
 
+run_case_jsonl() {
+  local name="$1"
+  shift
+
+  uv run autosvc "$@" >"${TMP_DIR}/${name}.raw"
+  python3 - "${TMP_DIR}/${name}.raw" "${TMP_DIR}/${name}.jsonl" <<'PY'
+import json
+import sys
+
+raw_path, out_path = sys.argv[1], sys.argv[2]
+out_lines: list[str] = []
+with open(raw_path, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            # Ignore non-JSON noise lines.
+            continue
+        out_lines.append(json.dumps(obj, sort_keys=True, separators=(",", ":")))
+with open(out_path, "w", encoding="utf-8") as f:
+    if out_lines:
+        f.write("\n".join(out_lines) + "\n")
+    else:
+        f.write("")
+PY
+
+  if diff -u "${GOLDENS_DIR}/${name}.jsonl" "${TMP_DIR}/${name}.jsonl" >/dev/null; then
+    echo "OK ${name}"
+    return 0
+  fi
+
+  echo "MISMATCH ${name}"
+  diff -u "${GOLDENS_DIR}/${name}.jsonl" "${TMP_DIR}/${name}.jsonl" || true
+  return 1
+}
+
 setup_vcan
 
 uv run autosvc-ecu-sim --can "${CAN_IF}" --ecu "${ECU}" >"${TMP_DIR}/emulator.log" 2>&1 &
@@ -78,6 +117,8 @@ run_case "topo_scan_11bit_both" topo scan --can "${CAN_IF}" --can-id-mode 11bit 
 run_case "dtc_read_before" dtc read --ecu "${ECU}" --can "${CAN_IF}" || ok=1
 run_case "dtc_clear" dtc clear --ecu "${ECU}" --can "${CAN_IF}" || ok=1
 run_case "dtc_read_after" dtc read --ecu "${ECU}" --can "${CAN_IF}" || ok=1
+run_case "did_read_f190" did read --ecu "${ECU}" --did F190 --can "${CAN_IF}" || ok=1
+run_case_jsonl "watch_rpm_changed_5" watch --items "${ECU}:1234" --emit changed --ticks 5 --can "${CAN_IF}" || ok=1
 
 kill "${EMU_PID}" >/dev/null 2>&1 || true
 wait "${EMU_PID}" >/dev/null 2>&1 || true

@@ -3,6 +3,7 @@ from __future__ import annotations
 from autosvc.core.dtc.decode import decode_dtcs
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
+from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
 from autosvc.core.vehicle.discovery import DiscoveryConfig
 from autosvc.core.vehicle.discovery import scan_topology as _scan_topology
 from autosvc.core.vehicle.topology import Topology
@@ -42,6 +43,26 @@ class DiagnosticService:
     def clear_dtcs(self, ecu: str) -> None:
         ecu_id = _normalize_ecu(ecu)
         self._uds.clear_dtcs(ecu_id)
+
+    def read_did(self, ecu: str, did: int) -> dict[str, object]:
+        ecu_id = _normalize_ecu(ecu)
+        did_int = parse_did(did)
+        self._uds.set_ecu(ecu_id)
+        data = _uds_read_did(self._uds, did_int)
+        spec, value = decode_did(did_int, data)
+        return {
+            "ecu": ecu_id,
+            "did": format_did(spec.did),
+            "name": spec.name,
+            "value": value,
+            "unit": spec.unit,
+        }
+
+    def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        for did in dids:
+            out.append(self.read_did(ecu, did))
+        return out
 
 
 def _normalize_ecu(value: str) -> str:

@@ -12,11 +12,13 @@ Date: 2026-02-06
     - DiagnosticSessionControl (`0x10`)
     - ReadDTCInformation (`0x19 0x02`)
     - ClearDiagnosticInformation (`0x14`)
+    - ReadDataByIdentifier (`0x22`) (minimal DID registry)
   - Domain API: `DiagnosticService`
     - `scan_ecus()`
     - `scan_topology(config)` (Discovery 2.0)
     - `read_dtcs(ecu)` returning decoded, human-friendly dicts
     - `clear_dtcs(ecu)`
+    - `read_did(ecu, did)` and `read_dids(ecu, dids)`
   - Discovery 2.0
     - Functional scan, physical scan, or both (configurable)
     - Optional UDS session confirmation probing
@@ -27,6 +29,9 @@ Date: 2026-02-06
     - Generic registry
     - VAG overrides (optional via `AUTOSVC_BRAND=vag` or daemon `--brand vag`)
   - Deterministic record/replay transports for offline runs
+  - Live data (minimal):
+    - tick-based watch list (`autosvc watch`) emitting deterministic JSONL events
+    - daemon can stream watch events over the existing JSONL socket connection
 
 - Apps:
   - CLI (`autosvc`)
@@ -44,6 +49,8 @@ The Debian emulator validates:
   - read_dtcs
   - clear_dtcs
   - read_dtcs
+  - read_did (VIN)
+  - watch (JSONL live DID events)
 
 ## Autotest Pipeline (Debian)
 
@@ -67,6 +74,8 @@ uv run autosvc topo scan --can vcan0 --can-id-mode 11bit --addressing both
 uv run autosvc dtc read --ecu 01 --can vcan0
 uv run autosvc dtc clear --ecu 01 --can vcan0
 uv run autosvc dtc read --ecu 01 --can vcan0
+uv run autosvc did read --ecu 01 --did F190 --can vcan0
+uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 ```
 
 Discovery 2.0 flags:
@@ -94,4 +103,17 @@ sudo tools/autotest.sh vcan0 01
 - No CAN FD
 - ECU discovery uses deterministic defaults (small physical range + functional sweep)
 - UDS coverage is intentionally minimal (service diagnostics only)
-- No security access, no long sessions, no live data streaming
+- No security access, no long sessions, and live data coverage is minimal
+
+## Manual Coverage vs Features
+
+Major features and their manual coverage:
+
+- Setup + safety baseline: `docs/manual/SETUP.md`
+- First real diagnostic session walkthrough: `docs/manual/FIRST_DIAG.md`
+- Discovery 2.0 (functional/physical/both; 11-bit/29-bit): `docs/manual/DISCOVERY.md`
+- DTC read/clear + decode: `docs/manual/DTC.md`
+- Live data (`0x22`) and watch lists: `docs/manual/LIVE_DATA.md`
+- Emulator + Debian autotest flow: `docs/manual/EMULATOR.md`
+- Troubleshooting: `docs/manual/COMMON_PROBLEMS.md`
+- Limitations / non-goals: `docs/manual/LIMITATIONS.md`
