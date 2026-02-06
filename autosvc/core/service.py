@@ -3,26 +3,34 @@ from __future__ import annotations
 from autosvc.core.dtc.decode import decode_dtcs
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
+from autosvc.core.vehicle.discovery import DiscoveryConfig
+from autosvc.core.vehicle.discovery import scan_topology as _scan_topology
+from autosvc.core.vehicle.topology import Topology
 
 
 class DiagnosticService:
     """High-level diagnostic API used by all frontends (CLI/TUI/daemon)."""
 
-    def __init__(self, transport: CanTransport, *, brand: str | None = None) -> None:
+    def __init__(
+        self,
+        transport: CanTransport,
+        *,
+        brand: str | None = None,
+        can_interface: str = "unknown",
+        can_id_mode: str = "11bit",
+    ) -> None:
         self._transport = transport
         self._brand = brand
-        self._uds = UdsClient(transport)
+        self._can_interface = can_interface
+        self._can_id_mode = can_id_mode
+        self._uds = UdsClient(transport, can_id_mode=can_id_mode)
 
     def scan_ecus(self) -> list[str]:
-        found: list[str] = []
-        for ecu in range(1, 0x10):
-            ecu_id = f"{ecu:02X}"
-            try:
-                if self._uds.diagnostic_session_control(ecu_id):
-                    found.append(ecu_id)
-            except Exception:
-                continue
-        return found
+        topo = self.scan_topology(DiscoveryConfig(can_id_mode=self._can_id_mode))
+        return [node.ecu for node in topo.nodes]
+
+    def scan_topology(self, config: DiscoveryConfig) -> Topology:
+        return _scan_topology(self._transport, config, can_interface=self._can_interface)
 
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
         ecu_id = _normalize_ecu(ecu)
@@ -46,6 +54,6 @@ def _normalize_ecu(value: str) -> str:
         ecu_int = int(raw, 16)
     except ValueError as exc:
         raise ValueError("ecu must be hex string") from exc
-    if ecu_int < 0 or ecu_int > 0x7F:
+    if ecu_int < 0 or ecu_int > 0xFF:
         raise ValueError("ecu out of range")
     return f"{ecu_int:02X}"

@@ -74,9 +74,19 @@ sleep 0.2
 
 ok=0
 run_case "scan" scan --can "${CAN_IF}" || ok=1
+run_case "topo_scan_11bit_both" topo scan --can "${CAN_IF}" --can-id-mode 11bit --addressing both || ok=1
 run_case "dtc_read_before" dtc read --ecu "${ECU}" --can "${CAN_IF}" || ok=1
 run_case "dtc_clear" dtc clear --ecu "${ECU}" --can "${CAN_IF}" || ok=1
 run_case "dtc_read_after" dtc read --ecu "${ECU}" --can "${CAN_IF}" || ok=1
+
+kill "${EMU_PID}" >/dev/null 2>&1 || true
+wait "${EMU_PID}" >/dev/null 2>&1 || true
+EMU_PID=""
+
+uv run autosvc-ecu-sim --can "${CAN_IF}" --can-id-mode 29bit >"${TMP_DIR}/emulator-29bit.log" 2>&1 &
+EMU_PID="$!"
+sleep 0.2
+run_case "topo_scan_29bit_both" topo scan --can "${CAN_IF}" --can-id-mode 29bit --addressing both || ok=1
 
 if [[ "${ok}" -ne 0 ]]; then
   echo "FAIL"

@@ -14,8 +14,14 @@ Date: 2026-02-06
     - ClearDiagnosticInformation (`0x14`)
   - Domain API: `DiagnosticService`
     - `scan_ecus()`
+    - `scan_topology(config)` (Discovery 2.0)
     - `read_dtcs(ecu)` returning decoded, human-friendly dicts
     - `clear_dtcs(ecu)`
+  - Discovery 2.0
+    - Functional scan, physical scan, or both (configurable)
+    - Optional UDS session confirmation probing
+    - 11-bit and 29-bit CAN identifier modes (flagged)
+    - Topology report model (`Topology`, `EcuNode`) with stable serialization
   - DTC decoding + description registry
   - Brand overrides:
     - Generic registry
@@ -34,6 +40,7 @@ The Debian emulator validates:
 - ISO-TP multi-frame ECU responses (DTC list)
 - UDS service flow for the scenario:
   - scan
+  - topology scan (Discovery 2.0)
   - read_dtcs
   - clear_dtcs
   - read_dtcs
@@ -49,17 +56,25 @@ sudo tools/vcan.sh vcan0
 2. Run the emulator (background)
 
 ```bash
-uv run autosvc-ecu-sim --can vcan0 --ecu 01
+uv run autosvc-ecu-sim --can vcan0 --can-id-mode 11bit
 ```
 
 3. Run scenario commands (CLI, in-process)
 
 ```bash
 uv run autosvc scan --can vcan0
+uv run autosvc topo scan --can vcan0 --can-id-mode 11bit --addressing both
 uv run autosvc dtc read --ecu 01 --can vcan0
 uv run autosvc dtc clear --ecu 01 --can vcan0
 uv run autosvc dtc read --ecu 01 --can vcan0
 ```
+
+Discovery 2.0 flags:
+- `--addressing functional|physical|both`
+- `--can-id-mode 11bit|29bit`
+- `--timeout-ms N`
+- `--retries N`
+- `--probe-session` / `--no-probe-session`
 
 4. Compare against goldens
 
@@ -72,9 +87,11 @@ sudo tools/autotest.sh vcan0 01
 
 ## Limitations / Non-Goals
 
-- Only 11-bit CAN IDs (no 29-bit IDs)
+- 29-bit support uses a single documented convention:
+  - physical: `0x18DA<ecu><tester>` / `0x18DA<tester><ecu>` (tester SA = `0xF1`)
+  - functional: `0x18DB33F1`
+- No support for alternative 29-bit addressing schemes
 - No CAN FD
-- ECU discovery strategy is simple (iterates a small address range)
+- ECU discovery uses deterministic defaults (small physical range + functional sweep)
 - UDS coverage is intentionally minimal (service diagnostics only)
 - No security access, no long sessions, no live data streaming
-

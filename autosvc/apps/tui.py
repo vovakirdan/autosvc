@@ -12,11 +12,13 @@ from textual.widgets import Button, DataTable, Footer, Header, ListItem, ListVie
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.transport.socketcan import SocketCanTransport
+from autosvc.core.vehicle.discovery import DiscoveryConfig
+from autosvc.core.vehicle.topology import EcuNode, Topology, ids_for_ecu
 from autosvc.ipc.unix_client import UnixJsonlClient
 
 
 class AutosvcApi(Protocol):
-    def scan_ecus(self) -> list[str]: ...
+    def scan_topology(self) -> Topology: ...
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]: ...
     def clear_dtcs(self, ecu: str) -> None: ...
 
@@ -27,15 +29,23 @@ class _AppConfig:
 
 
 class InProcessApi:
-    def __init__(self, can_if: str) -> None:
-        self._transport = SocketCanTransport(channel=can_if)
-        self._service = DiagnosticService(self._transport)
+    def __init__(self, can_if: str, *, can_id_mode: str, addressing: str) -> None:
+        self._can_if = can_if
+        self._can_id_mode = can_id_mode
+        self._addressing = addressing
+        self._transport = SocketCanTransport(channel=can_if, is_extended_id=(can_id_mode == "29bit"))
+        self._service = DiagnosticService(self._transport, can_interface=can_if, can_id_mode=can_id_mode)
 
     def close(self) -> None:
         self._transport.close()
 
-    def scan_ecus(self) -> list[str]:
-        return self._service.scan_ecus()
+    def scan_topology(self) -> Topology:
+        return self._service.scan_topology(
+            DiscoveryConfig(
+                addressing=self._addressing,
+                can_id_mode=self._can_id_mode,
+            )
+        )
 
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
         return self._service.read_dtcs(ecu)
@@ -45,13 +55,34 @@ class InProcessApi:
 
 
 class IpcApi:
-    def __init__(self, sock_path: str) -> None:
+    def __init__(self, sock_path: str, *, can_id_mode: str, addressing: str) -> None:
         self._client = UnixJsonlClient(sock_path)
+        self._can_id_mode = can_id_mode
+        self._addressing = addressing
 
-    def scan_ecus(self) -> list[str]:
+    def scan_topology(self) -> Topology:
         resp = self._client.request({"cmd": "scan_ecus"})
         _raise_on_error(resp)
-        return list(resp.get("ecus") or [])
+        ecus = list(resp.get("ecus") or [])
+        nodes: list[EcuNode] = []
+        for ecu in sorted({str(e).upper() for e in ecus}):
+            tx_id, rx_id = ids_for_ecu(ecu, self._can_id_mode)
+            nodes.append(
+                EcuNode(
+                    ecu=ecu,
+                    tx_id=tx_id,
+                    rx_id=rx_id,
+                    can_id_mode=self._can_id_mode,
+                    uds_confirmed=True,
+                    notes=["from:daemon"],
+                )
+            )
+        return Topology(
+            can_interface="daemon",
+            can_id_mode=self._can_id_mode,
+            addressing=self._addressing,
+            nodes=nodes,
+        )
 
     def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
         resp = self._client.request({"cmd": "read_dtcs", "ecu": ecu})
@@ -137,17 +168,23 @@ class EcuScanScreen(Screen[None]):
         ecu_list = self.query_one("#ecu_list", ListView)
         ecu_list.clear()
         try:
-            ecus = self._api.scan_ecus()
+            topo = self._api.scan_topology()
         except Exception as exc:
             status.update(f"Error: {exc}")
             return
-        if not ecus:
+        if not topo.nodes:
             status.update("No ECUs found.")
             return
-        status.update(f"Found {len(ecus)} ECU(s). Select one to view DTCs.")
-        for ecu in ecus:
-            item = ListItem(Static(ecu))
-            item.data = ecu
+        status.update(f"Found {len(topo.nodes)} ECU(s). Select one to view DTCs.")
+        for node in topo.nodes:
+            label = (
+                f"{node.ecu}  "
+                f"tx=0x{node.tx_id:X}  "
+                f"rx=0x{node.rx_id:X}  "
+                f"uds={'yes' if node.uds_confirmed else 'no'}"
+            )
+            item = ListItem(Static(label))
+            item.data = node.ecu
             ecu_list.append(item)
 
 
@@ -220,6 +257,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="autosvc Textual TUI")
     parser.add_argument("--can", default=None, help="SocketCAN interface (in-process mode, e.g. vcan0)")
     parser.add_argument("--connect", default=None, help="Unix socket path (daemon mode)")
+    parser.add_argument("--can-id-mode", choices=["11bit", "29bit"], default="11bit")
+    parser.add_argument("--addressing", choices=["functional", "physical", "both"], default="both")
     args = parser.parse_args(argv)
 
     config = _AppConfig(title="autosvc")
@@ -228,10 +267,10 @@ def main(argv: list[str] | None = None) -> None:
     inproc: InProcessApi | None = None
     try:
         if args.connect:
-            api = IpcApi(args.connect)
+            api = IpcApi(args.connect, can_id_mode=args.can_id_mode, addressing=args.addressing)
         else:
             can_if = args.can or "vcan0"
-            inproc = InProcessApi(can_if)
+            inproc = InProcessApi(can_if, can_id_mode=args.can_id_mode, addressing=args.addressing)
             api = inproc
         AutosvcTui(api, config).run()
     except Exception as exc:

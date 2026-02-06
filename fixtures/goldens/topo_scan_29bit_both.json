@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "topology": {
+    "addressing": "both",
+    "can_id_mode": "29bit",
+    "can_interface": "vcan0",
+    "nodes": [
+      {
+        "can_id_mode": "29bit",
+        "ecu": "01",
+        "notes": [
+          "seen:functional",
+          "seen:physical"
+        ],
+        "rx_id": 417001729,
+        "tx_id": 416940529,
+        "uds_confirmed": true
+      },
+      {
+        "can_id_mode": "29bit",
+        "ecu": "03",
+        "notes": [
+          "seen:functional",
+          "seen:physical"
+        ],
+        "rx_id": 417001731,
+        "tx_id": 416941041,
+        "uds_confirmed": true
+      }
+    ]
+  }
+}
+

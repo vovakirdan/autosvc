@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "topology": {
+    "addressing": "both",
+    "can_id_mode": "11bit",
+    "can_interface": "vcan0",
+    "nodes": [
+      {
+        "can_id_mode": "11bit",
+        "ecu": "01",
+        "notes": [
+          "seen:functional",
+          "seen:physical"
+        ],
+        "rx_id": 2025,
+        "tx_id": 2017,
+        "uds_confirmed": true
+      },
+      {
+        "can_id_mode": "11bit",
+        "ecu": "03",
+        "notes": [
+          "seen:functional",
+          "seen:physical"
+        ],
+        "rx_id": 2027,
+        "tx_id": 2019,
+        "uds_confirmed": true
+      }
+    ]
+  }
+}
+

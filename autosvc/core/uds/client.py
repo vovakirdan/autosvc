@@ -12,10 +12,18 @@ class UdsError(Exception):
 
 
 class UdsClient:
-    def __init__(self, transport: CanTransport, p2_ms: int = 50, p2_star_ms: int = 5000) -> None:
+    def __init__(
+        self,
+        transport: CanTransport,
+        p2_ms: int = 50,
+        p2_star_ms: int = 5000,
+        *,
+        can_id_mode: str = "11bit",
+    ) -> None:
         self._transport = transport
         self._p2_ms = int(p2_ms)
         self._p2_star_ms = int(p2_star_ms)
+        self._can_id_mode = can_id_mode
         self._active_ecu: str | None = None
 
     def request(self, sid: int, data: bytes = b"") -> bytes:
@@ -96,7 +104,16 @@ class UdsClient:
 
     def _ecu_ids(self, ecu: str) -> tuple[int, int]:
         ecu_int = int(ecu, 16)
-        if ecu_int < 0 or ecu_int > 0x7F:
+        if ecu_int < 0 or ecu_int > 0xFF:
             raise ValueError("ecu out of range")
-        return 0x7E0 + ecu_int, 0x7E8 + ecu_int
-
+        if self._can_id_mode == "11bit":
+            if ecu_int > 0x17:
+                raise ValueError("ecu out of range")
+            return 0x7E0 + ecu_int, 0x7E8 + ecu_int
+        if self._can_id_mode == "29bit":
+            # See autosvc.core.vehicle.topology.ids_for_ecu() for details.
+            tester_sa = 0xF1
+            req_id = 0x18DA0000 | ((ecu_int & 0xFF) << 8) | (tester_sa & 0xFF)
+            resp_id = 0x18DA0000 | ((tester_sa & 0xFF) << 8) | (ecu_int & 0xFF)
+            return req_id, resp_id
+        raise ValueError("invalid can_id_mode")
