@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+IFACE="${1:-vcan0}"
+
 modprobe vcan
 
-if ! ip link show vcan0 >/dev/null 2>&1; then
-    ip link add dev vcan0 type vcan
+if ! ip link show "${IFACE}" >/dev/null 2>&1; then
+    ip link add dev "${IFACE}" type vcan
 fi
 
-ip link set up vcan0
+ip link set up "${IFACE}"

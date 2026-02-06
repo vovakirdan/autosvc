@@ -1,49 +1,108 @@
 # autosvc
 
-Local automotive diagnostic service backend with a minimal TUI client.
+Local automotive service diagnostics with a client-agnostic Python core, a CLI/TUI, and an optional Unix-socket daemon.
+
+## What We Do / What We Don't Do
+
+We do:
+- ECU discovery (basic scan)
+- Read DTCs and decode them into human-friendly records
+- Clear DTCs
+
+We don't:
+- Flash ECUs
+- Do coding/adaptations/immobilizer work
+- Support safety-critical operations
 
 ## Requirements
 
 - Python 3.11+
-- SocketCAN for real hardware (or vcan0 for local testing)
+- `uv` (package manager)
+- Linux with SocketCAN (real `can0` or `vcan0` for local testing)
+- Root/sudo for `vcan` setup
 
-## Quick start
+## Quick Start (vcan + emulator)
 
 ```bash
 uv sync
-autosvc-backend --transport mock
-autosvc-tui
+sudo tools/vcan.sh vcan0
 ```
 
-## SocketCAN
+Terminal 1, start an ECU simulator:
 
 ```bash
-sudo tools/vcan.sh
-autosvc-backend --transport socketcan --can-if vcan0
+uv run autosvc-ecu-sim --can vcan0 --ecu 01
 ```
 
-## IPC protocol
+Terminal 2, run CLI against the simulator (in-process mode):
 
-Requests (JSON Lines):
-
-```json
-{"cmd":"scan_ecus"}
-{"cmd":"read_dtcs","ecu":"01"}
-{"cmd":"clear_dtcs","ecu":"01"}
+```bash
+uv run autosvc scan --can vcan0
+uv run autosvc dtc read --ecu 01 --can vcan0
+uv run autosvc dtc clear --ecu 01 --can vcan0
+uv run autosvc dtc read --ecu 01 --can vcan0
 ```
 
-Responses:
+## Run The TUI (Textual)
 
-```json
-{"ok":true,"ecus":["01","03","08"]}
+In-process mode:
+
+```bash
+uv run autosvc tui --can vcan0
 ```
 
-```json
-{"ok":true,"dtcs":[{"code":"P2002","status":"active"}]}
+Daemon mode:
+
+```bash
+uv run autosvc tui --connect /tmp/autosvc.sock
 ```
 
-Errors:
+## Daemon Mode (JSONL over Unix Socket)
 
-```json
-{"ok":false,"error":"message"}
+Start daemon:
+
+```bash
+uv run autosvc daemon --can vcan0 --sock /tmp/autosvc.sock
 ```
+
+Use CLI against daemon:
+
+```bash
+uv run autosvc --connect /tmp/autosvc.sock scan
+uv run autosvc --connect /tmp/autosvc.sock dtc read --ecu 01
+uv run autosvc --connect /tmp/autosvc.sock dtc clear --ecu 01
+```
+
+Why daemon exists:
+- Share a single CAN/ISO-TP/UDS session between multiple clients
+- Keep long-lived transport state (and avoid repeated bus init)
+- Allow alternative clients later (e.g. HTTP) without touching the core
+
+## Debian Autotest Flow
+
+```bash
+sudo tools/autotest.sh vcan0 01
+```
+
+Goldens live in `fixtures/goldens/`.
+
+## Brand Overrides (optional)
+
+Brand can be set via environment:
+
+```bash
+AUTOSVC_BRAND=vag uv run autosvc dtc read --ecu 01 --can vcan0
+```
+
+Or on daemon startup:
+
+```bash
+uv run autosvc daemon --can vcan0 --sock /tmp/autosvc.sock --brand vag
+```
+
+## Docs
+
+- `docs/ARCHITECTURE.md`
+- `docs/EMULATOR.md`
+- `docs/STATUS.md`
+

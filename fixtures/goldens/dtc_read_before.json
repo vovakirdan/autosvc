@@ -1,0 +1,30 @@
+{
+  "dtcs": [
+    {
+      "code": "P2002",
+      "description": "Diesel particulate filter efficiency below threshold",
+      "flags": [
+        "test_failed"
+      ],
+      "raw": "002002",
+      "severity": "info",
+      "status": "active",
+      "status_byte": 1,
+      "system": "P"
+    },
+    {
+      "code": "P0420",
+      "description": "Catalyst system efficiency below threshold (Bank 1)",
+      "flags": [
+        "test_failed_this_operation_cycle"
+      ],
+      "raw": "000420",
+      "severity": "info",
+      "status": "stored",
+      "status_byte": 2,
+      "system": "P"
+    }
+  ],
+  "ok": true
+}
+

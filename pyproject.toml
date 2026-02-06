@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "autosvc"
 version = "0.1.0"
-description = "Local automotive diagnostic service backend with a minimal TUI client."
+description = "Local automotive diagnostic service with a client-agnostic core, CLI/TUI frontends, and optional daemon."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-autosvc-backend = "backend.main:main"
-autosvc-tui = "tui.main:main"
+autosvc = "autosvc.apps.cli:main"
+autosvc-ecu-sim = "autosvc.emulator.ecu_sim:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend", "tui"]
+packages = ["autosvc"]
