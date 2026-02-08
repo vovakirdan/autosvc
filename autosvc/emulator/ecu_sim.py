@@ -214,16 +214,81 @@ class EcuSimulator:
             return bytes([0x62, payload[1], payload[2]]) + data
 
         if sid == 0x19:
-            if len(payload) < 2 or payload[1] != 0x02:
-                return bytes([0x7F, sid, 0x12])
-            status_mask = payload[2] if len(payload) > 2 else 0xFF
-            out = bytearray([0x59, 0x02, status_mask])
-            for code, status in self.dtcs:
-                dtc_val = encode_dtc(code)
-                out.append((dtc_val >> 8) & 0xFF)
-                out.append(dtc_val & 0xFF)
-                out.append(status_to_byte(status))
-            return bytes(out)
+            if len(payload) < 2:
+                return bytes([0x7F, sid, 0x13])
+            sub = payload[1]
+
+            if sub == 0x02:
+                status_mask = payload[2] if len(payload) > 2 else 0xFF
+                out = bytearray([0x59, 0x02, status_mask])
+                for code, status in self.dtcs:
+                    dtc_val = encode_dtc(code)
+                    out.append((dtc_val >> 8) & 0xFF)
+                    out.append(dtc_val & 0xFF)
+                    out.append(status_to_byte(status))
+                return bytes(out)
+
+            if sub == 0x04:
+                # ReportDTCSnapshotIdentification (MVP emulator semantics).
+                #
+                # Format (emulator-defined but UDS-shaped):
+                #   0x59 0x04 <status_mask> [<dtc_hi> <dtc_lo> <record_id>]...
+                #
+                # Only DTCs that have a deterministic snapshot record are listed.
+                status_mask = payload[2] if len(payload) > 2 else 0xFF
+                out = bytearray([0x59, 0x04, status_mask])
+                dtc_codes = {code for code, _ in self.dtcs}
+                if "P0300" in dtc_codes:
+                    dtc_val = encode_dtc("P0300")
+                    out.append((dtc_val >> 8) & 0xFF)
+                    out.append(dtc_val & 0xFF)
+                    out.append(0x01)  # record id
+                return bytes(out)
+
+            if sub == 0x05:
+                # ReportDTCSnapshotRecordByDTCNumber (MVP emulator semantics).
+                #
+                # Request:
+                #   0x19 0x05 <dtc_hi> <dtc_lo> <record_id>
+                #
+                # Response:
+                #   0x59 0x05 <dtc_hi> <dtc_lo> <record_id> <param_count>
+                #     [<did_hi> <did_lo> <len> <data...>]...
+                #
+                # This is a simplification. Real ECUs may encode snapshot records
+                # differently, but the core parsing is designed to be extended.
+                if len(payload) < 5:
+                    return bytes([0x7F, sid, 0x13])
+                dtc_val = ((payload[2] & 0xFF) << 8) | (payload[3] & 0xFF)
+                record_id = payload[4] & 0xFF
+                dtc_codes = {code for code, _ in self.dtcs}
+                if dtc_val != encode_dtc("P0300") or record_id != 0x01 or "P0300" not in dtc_codes:
+                    return bytes([0x7F, sid, 0x31])
+
+                params: list[tuple[int, bytes]] = [
+                    # Use emulator-defined DIDs for deterministic output.
+                    (0x1234, int(820).to_bytes(2, byteorder="big", signed=False)),  # Engine RPM
+                    (0x1235, int(0).to_bytes(2, byteorder="big", signed=False)),  # Vehicle Speed
+                    (0x1236, int(92).to_bytes(2, byteorder="big", signed=False)),  # Coolant Temp
+                ]
+                out = bytearray(
+                    [
+                        0x59,
+                        0x05,
+                        (dtc_val >> 8) & 0xFF,
+                        dtc_val & 0xFF,
+                        record_id & 0xFF,
+                        len(params) & 0xFF,
+                    ]
+                )
+                for did, data in params:
+                    out.append((did >> 8) & 0xFF)
+                    out.append(did & 0xFF)
+                    out.append(len(data) & 0xFF)
+                    out.extend(data)
+                return bytes(out)
+
+            return bytes([0x7F, sid, 0x12])
 
         if sid == 0x14:
             self.dtcs = []

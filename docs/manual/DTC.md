@@ -73,6 +73,27 @@ Notes:
 - VAG descriptions are offline and curated. No network lookups are performed.
 - Coverage is intentionally incomplete. Unknown codes fall back to generic or to `Unknown DTC`.
 
+## Freeze-Frame (Snapshot Context)
+
+Some ECUs store a "snapshot" of conditions when a DTC was recorded (commonly called freeze-frame).
+This context can make a DTC materially more useful, because it answers "under what conditions did it happen".
+
+`autosvc` can request freeze-frame data via UDS ReadDTCInformation (0x19) snapshot records when available.
+
+To request freeze-frame:
+
+```bash
+uv run autosvc dtc read --ecu 01 --can can0 --with-freeze-frame
+```
+
+Notes:
+
+- Freeze-frame is ECU-dependent. Many ECUs do not support it, or only provide it for some DTCs.
+- If freeze-frame is not available for a DTC, `freeze_frame` will be `null`.
+- Unknown parameters are still included with raw hex for offline analysis.
+- This is read-only diagnostics. `autosvc` does not write freeze-frame data.
+- Daemon mode does not currently support freeze-frame requests (in-process only).
+
 ## Clearing DTCs
 
 Clearing codes does NOT fix the root cause. It only removes stored records (until the fault reappears).

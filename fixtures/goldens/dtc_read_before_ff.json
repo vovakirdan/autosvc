@@ -1,0 +1,63 @@
+{
+  "dtcs": [
+    {
+      "brand": "generic",
+      "code": "P0300",
+      "description": "Random/multiple cylinder misfire detected",
+      "ecu": "01",
+      "ecu_name": "Unknown ECU",
+      "flags": [
+        "test_failed"
+      ],
+      "freeze_frame": {
+        "parameters": [
+          {
+            "did": "1234",
+            "name": "Engine RPM",
+            "raw": "0334",
+            "unit": "rpm",
+            "value": 820
+          },
+          {
+            "did": "1235",
+            "name": "Vehicle Speed",
+            "raw": "0000",
+            "unit": "km/h",
+            "value": 0
+          },
+          {
+            "did": "1236",
+            "name": "Coolant Temp",
+            "raw": "005C",
+            "unit": "C",
+            "value": 92
+          }
+        ],
+        "record_id": 1
+      },
+      "raw": "000300",
+      "severity": "info",
+      "status": "active",
+      "status_byte": 1,
+      "system": "P"
+    },
+    {
+      "brand": "generic",
+      "code": "P0171",
+      "description": "Unknown DTC",
+      "ecu": "01",
+      "ecu_name": "Unknown ECU",
+      "flags": [
+        "test_failed_this_operation_cycle"
+      ],
+      "freeze_frame": null,
+      "raw": "000171",
+      "severity": "info",
+      "status": "stored",
+      "status_byte": 2,
+      "system": "P"
+    }
+  ],
+  "ok": true
+}
+

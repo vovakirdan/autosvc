@@ -5,6 +5,7 @@ from autosvc.core.dtc.registry import get_modules
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
 from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
+from autosvc.core.uds.freeze_frame import FreezeFrameError, list_snapshot_identification, read_snapshot_record
 from autosvc.core.vehicle.discovery import DiscoveryConfig
 from autosvc.core.vehicle.discovery import scan_topology as _scan_topology
 from autosvc.core.vehicle.topology import Topology
@@ -37,7 +38,7 @@ class DiagnosticService:
             node.ecu_name = _resolve_ecu_name(node.ecu, self._brand)
         return topo
 
-    def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
+    def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]:
         ecu_id = _normalize_ecu(ecu)
         dtcs = self._uds.read_dtcs(ecu_id)
         raw_dtcs = [dtc.raw_tuple() for dtc in dtcs]
@@ -46,6 +47,8 @@ class DiagnosticService:
         for item in decoded:
             item["ecu"] = ecu_id
             item["ecu_name"] = ecu_name
+        if with_freeze_frame:
+            self._attach_freeze_frames(ecu_id, decoded)
         return decoded
 
     def clear_dtcs(self, ecu: str) -> None:
@@ -71,6 +74,26 @@ class DiagnosticService:
         for did in dids:
             out.append(self.read_did(ecu, did))
         return out
+
+    def _attach_freeze_frames(self, ecu: str, items: list[dict[str, object]]) -> None:
+        # Freeze-frame is optional and ECU-dependent. Failure to retrieve it
+        # should not make DTC reads fail.
+        self._uds.set_ecu(ecu)
+        try:
+            snapshot_map = list_snapshot_identification(self._uds)
+        except Exception:
+            snapshot_map = {}
+        for item in items:
+            code = str(item.get("code") or "")
+            record_id = snapshot_map.get(code)
+            if record_id is None:
+                item["freeze_frame"] = None
+                continue
+            try:
+                ff = read_snapshot_record(self._uds, dtc=code, record_id=int(record_id))
+            except FreezeFrameError:
+                ff = None
+            item["freeze_frame"] = ff.to_dict() if ff else None
 
 
 def _normalize_ecu(value: str) -> str:

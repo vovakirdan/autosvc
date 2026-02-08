@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> None:
 
     dtc_read_p = dtc_sub.add_parser("read", help="Read DTCs")
     dtc_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 01)")
+    dtc_read_p.add_argument(
+        "--with-freeze-frame",
+        action="store_true",
+        help="Best-effort freeze-frame / snapshot context (in-process mode only).",
+    )
     _add_can_args(dtc_read_p)
     _add_connect_arg(dtc_read_p)
     _add_can_id_mode_arg(dtc_read_p)
@@ -148,11 +153,20 @@ def main(argv: list[str] | None = None) -> None:
     if args.cmd == "dtc" and args.dtc_cmd == "read":
         connect = getattr(args, "connect", None) or args.global_connect
         if connect:
+            if args.with_freeze_frame:
+                _print_json({"ok": False, "error": "freeze-frame is not available in daemon mode"})
+                raise SystemExit(1)
             response = _ipc_request(connect, {"cmd": "read_dtcs", "ecu": args.ecu})
             _print_json(response)
             raise SystemExit(0 if response.get("ok") else 1)
 
-        response = _run_inprocess(args.can, can_id_mode=args.can_id_mode, op="read_dtcs", ecu=args.ecu)
+        response = _run_inprocess(
+            args.can,
+            can_id_mode=args.can_id_mode,
+            op="read_dtcs",
+            ecu=args.ecu,
+            with_freeze_frame=bool(args.with_freeze_frame),
+        )
         _print_json(response)
         raise SystemExit(0 if response.get("ok") else 1)
 
@@ -249,6 +263,7 @@ def _run_inprocess(
     op: str,
     ecu: str | None = None,
     did: str | None = None,
+    with_freeze_frame: bool = False,
     addressing: str = "both",
     timeout_ms: int = 250,
     retries: int = 1,
@@ -283,7 +298,7 @@ def _run_inprocess(
             return {"ok": True, "topology": topo.to_dict()}
         if op == "read_dtcs":
             assert ecu is not None
-            return {"ok": True, "dtcs": service.read_dtcs(ecu)}
+            return {"ok": True, "dtcs": service.read_dtcs(ecu, with_freeze_frame=with_freeze_frame)}
         if op == "clear_dtcs":
             assert ecu is not None
             service.clear_dtcs(ecu)

@@ -11,6 +11,9 @@ Date: 2026-02-06
   - UDS client subset:
     - DiagnosticSessionControl (`0x10`)
     - ReadDTCInformation (`0x19 0x02`)
+    - Freeze-frame / snapshot context (best-effort, ECU-dependent):
+      - Snapshot identification (`0x19 0x04`)
+      - Snapshot record (`0x19 0x05`)
     - ClearDiagnosticInformation (`0x14`)
     - ReadDataByIdentifier (`0x22`) (minimal DID registry)
   - Domain API: `DiagnosticService`
@@ -71,7 +74,6 @@ What is NOT covered yet:
 
 - ODX parsing
 - VIN/model-specific decoding
-- freeze-frame / extended DTC context
 - coding/adaptations and flashing/programming
 
 ## What Is Tested Via Emulator
@@ -85,6 +87,7 @@ The Debian emulator validates:
   - topology scan (Discovery 2.0)
   - read_dtcs
   - read_dtcs (VAG brand semantics: curated descriptions)
+  - read_dtcs with freeze-frame (manual; `--with-freeze-frame`)
   - clear_dtcs
   - read_dtcs
   - read_did (VIN)

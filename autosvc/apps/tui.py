@@ -19,7 +19,7 @@ from autosvc.ipc.unix_client import UnixJsonlClient
 
 class AutosvcApi(Protocol):
     def scan_topology(self) -> Topology: ...
-    def read_dtcs(self, ecu: str) -> list[dict[str, object]]: ...
+    def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]: ...
     def clear_dtcs(self, ecu: str) -> None: ...
     def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]: ...
 
@@ -48,8 +48,8 @@ class InProcessApi:
             )
         )
 
-    def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
-        return self._service.read_dtcs(ecu)
+    def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]:
+        return self._service.read_dtcs(ecu, with_freeze_frame=with_freeze_frame)
 
     def clear_dtcs(self, ecu: str) -> None:
         self._service.clear_dtcs(ecu)
@@ -103,7 +103,10 @@ class IpcApi:
             nodes=nodes,
         )
 
-    def read_dtcs(self, ecu: str) -> list[dict[str, object]]:
+    def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]:
+        # Freeze-frame is currently in-process only. Daemon protocol can be
+        # extended later without changing the core API.
+        _ = with_freeze_frame
         resp = self._client.request({"cmd": "read_dtcs", "ecu": ecu})
         _raise_on_error(resp)
         return list(resp.get("dtcs") or [])
@@ -223,6 +226,7 @@ class DtcScreen(Screen[None]):
         super().__init__()
         self._api = api
         self._ecu = ecu
+        self._dtcs: list[dict[str, object]] = []
 
     def compose(self) -> ComposeResult:
         yield Static(f"ECU {self._ecu}", id="title")
@@ -238,7 +242,17 @@ class DtcScreen(Screen[None]):
             yield table
 
     def on_mount(self) -> None:
+        table = self.query_one("#dtc_table", DataTable)
+        table.cursor_type = "row"
         self._refresh()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id != "dtc_table":
+            return
+        row = int(getattr(event, "cursor_row", -1))
+        if row < 0 or row >= len(self._dtcs):
+            return
+        self.app.push_screen(DtcDetailScreen(self._ecu, self._dtcs[row]))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back":
@@ -259,10 +273,11 @@ class DtcScreen(Screen[None]):
         table = self.query_one("#dtc_table", DataTable)
         table.clear()
         try:
-            dtcs = self._api.read_dtcs(self._ecu)
+            dtcs = self._api.read_dtcs(self._ecu, with_freeze_frame=True)
         except Exception as exc:
             status.update(f"Error: {exc}")
             return
+        self._dtcs = list(dtcs)
         if not dtcs:
             status.update("No DTCs.")
             return
@@ -285,6 +300,62 @@ class DtcScreen(Screen[None]):
             return
         status.update("Cleared. Refreshing...")
         self._refresh()
+
+
+class DtcDetailScreen(Screen[None]):
+    def __init__(self, ecu: str, dtc: dict[str, object]) -> None:
+        super().__init__()
+        self._ecu = ecu
+        self._dtc = dict(dtc)
+
+    def compose(self) -> ComposeResult:
+        code = str(self._dtc.get("code") or "")
+        yield Static(f"DTC {code} (ECU {self._ecu})", id="title")
+        with Vertical(id="panel"):
+            with Horizontal():
+                yield Button("Back", id="back")
+            yield Static("", id="status")
+            yield Static("", id="dtc_info")
+            table = DataTable(id="ff_table")
+            table.add_columns("DID", "Name", "Value", "Unit", "Raw")
+            yield table
+
+    def on_mount(self) -> None:
+        info = self.query_one("#dtc_info", Static)
+        code = str(self._dtc.get("code") or "")
+        status = str(self._dtc.get("status") or "")
+        severity = str(self._dtc.get("severity") or "")
+        desc = str(self._dtc.get("description") or "")
+        info.update(f"{code}  status={status}  severity={severity}\n{desc}")
+        self._render_freeze_frame()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.app.pop_screen()
+
+    def _render_freeze_frame(self) -> None:
+        status = self.query_one("#status", Static)
+        table = self.query_one("#ff_table", DataTable)
+        table.clear()
+        ff = self._dtc.get("freeze_frame")
+        if not isinstance(ff, dict):
+            status.update("No freeze-frame data.")
+            return
+        record_id = ff.get("record_id")
+        status.update(f"Freeze-frame record {record_id}")
+        params = ff.get("parameters")
+        if not isinstance(params, list) or not params:
+            return
+        for p in params:
+            if not isinstance(p, dict):
+                continue
+            table.add_row(
+                str(p.get("did") or ""),
+                str(p.get("name") or ""),
+                str(p.get("value") or ""),
+                str(p.get("unit") or ""),
+                str(p.get("raw") or ""),
+            )
 
 
 class LiveScreen(Screen[None]):
