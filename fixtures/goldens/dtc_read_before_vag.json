@@ -2,14 +2,14 @@
   "dtcs": [
     {
       "brand": "vag",
-      "code": "P2002",
-      "description": "Diesel particulate filter efficiency below threshold",
+      "code": "P0300",
+      "description": "Random/Multiple cylinder misfire detected",
       "ecu": "01",
       "ecu_name": "Engine",
       "flags": [
         "test_failed"
       ],
-      "raw": "002002",
+      "raw": "000300",
       "severity": "info",
       "status": "active",
       "status_byte": 1,

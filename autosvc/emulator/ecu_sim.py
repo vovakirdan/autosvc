@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> None:
     for ecu_int in ecu_ints:
         # Keep ECU 01 deterministic for golden DTC tests.
         if ecu_int == 0x01:
-            dtcs = [("P2002", "active"), ("P0171", "stored")]
+            dtcs = [("P0300", "active"), ("P0171", "stored")]
         elif ecu_int == 0x03:
             dtcs = []
         else:

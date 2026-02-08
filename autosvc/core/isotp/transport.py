@@ -34,10 +34,26 @@ def _decode_st_min(value: int) -> float:
 
 
 def _detect_legacy_transport(can_transport: CanTransport) -> bool:
-    name = type(can_transport).__name__
-    module = type(can_transport).__module__
-    # The built-in MockTransport doesn't implement ISO-TP frames yet.
-    return name == "MockTransport" or module.endswith(".mock")
+    # The built-in MockTransport doesn't implement ISO-TP framing.
+    #
+    # RecordingTransport wraps an inner transport, so detect legacy mode through
+    # wrappers to keep behavior consistent when transports are composed.
+    seen: set[int] = set()
+    cur: object = can_transport
+    while True:
+        obj_id = id(cur)
+        if obj_id in seen:
+            return False
+        seen.add(obj_id)
+        name = type(cur).__name__
+        module = type(cur).__module__
+        if name == "MockTransport" or module.endswith(".mock"):
+            return True
+        inner = getattr(cur, "_inner", None)
+        if isinstance(inner, CanTransport):
+            cur = inner
+            continue
+        return False
 
 
 class IsoTpTransport:
@@ -225,4 +241,3 @@ class IsoTpTransport:
                 continue
             return frame
         raise IsoTpTimeoutError("timeout waiting for CAN frame")
-
