@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "result": {
+    "backup_id": "000001",
+    "did": "1234",
+    "ecu": "09",
+    "ecu_name": "Central Electronics",
+    "key": "comfort_close_windows_remote",
+    "kind": "bool",
+    "label": "Comfort closing via remote",
+    "mode": "safe",
+    "new": {
+      "raw": "01",
+      "value": true
+    },
+    "old": {
+      "raw": "00",
+      "value": false
+    },
+    "risk": "safe"
+  }
+}
+

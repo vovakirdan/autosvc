@@ -11,6 +11,13 @@ class UdsError(Exception):
     pass
 
 
+class UdsNegativeResponseError(UdsError):
+    def __init__(self, *, sid: int, nrc: int) -> None:
+        super().__init__(f"negative response sid=0x{int(sid) & 0xFF:02X} nrc=0x{int(nrc) & 0xFF:02X}")
+        self.sid = int(sid) & 0xFF
+        self.nrc = int(nrc) & 0xFF
+
+
 class UdsClient:
     def __init__(
         self,
@@ -64,8 +71,42 @@ class UdsClient:
         self._active_ecu = ecu
         response = self.request(0x14, b"\xFF\xFF\xFF")
         if response[0] == 0x7F:
-            raise UdsError(f"negative response 0x{response[2]:02X}")
+            raise UdsNegativeResponseError(sid=0x14, nrc=response[2] if len(response) > 2 else 0x00)
         if response[0] != 0x54:
+            raise UdsError("unexpected response")
+
+    def write_did(self, did: int, payload: bytes) -> None:
+        if self._active_ecu is None:
+            raise UdsError("ecu not set")
+        did_int = int(did) & 0xFFFF
+        data = bytes([(did_int >> 8) & 0xFF, did_int & 0xFF]) + (payload or b"")
+        response = self._request_for_ecu(self._active_ecu, 0x2E, data)
+        if response[0] == 0x7F:
+            raise UdsNegativeResponseError(sid=0x2E, nrc=response[2] if len(response) > 2 else 0x00)
+        if len(response) < 3 or response[0] != 0x6E:
+            raise UdsError("unexpected response")
+        if response[1] != ((did_int >> 8) & 0xFF) or response[2] != (did_int & 0xFF):
+            raise UdsError("unexpected DID in response")
+
+    def security_access_request_seed(self, level: int) -> bytes:
+        if self._active_ecu is None:
+            raise UdsError("ecu not set")
+        lvl = int(level) & 0xFF
+        response = self._request_for_ecu(self._active_ecu, 0x27, bytes([lvl]))
+        if response[0] == 0x7F:
+            raise UdsNegativeResponseError(sid=0x27, nrc=response[2] if len(response) > 2 else 0x00)
+        if len(response) < 2 or response[0] != 0x67 or response[1] != lvl:
+            raise UdsError("unexpected response")
+        return response[2:]
+
+    def security_access_send_key(self, level: int, key: bytes) -> None:
+        if self._active_ecu is None:
+            raise UdsError("ecu not set")
+        lvl = int(level) & 0xFF
+        response = self._request_for_ecu(self._active_ecu, 0x27, bytes([lvl]) + (key or b""))
+        if response[0] == 0x7F:
+            raise UdsNegativeResponseError(sid=0x27, nrc=response[2] if len(response) > 2 else 0x00)
+        if len(response) < 2 or response[0] != 0x67 or response[1] != lvl:
             raise UdsError("unexpected response")
 
     def _request_for_ecu(self, ecu: str, sid: int, data: bytes) -> bytes:

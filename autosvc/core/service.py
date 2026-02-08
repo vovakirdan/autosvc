@@ -4,6 +4,7 @@ from autosvc.core.dtc.decode import decode_dtcs
 from autosvc.core.dtc.registry import get_modules
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
+from autosvc.core.uds.adaptations import AdaptationsManager
 from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
 from autosvc.core.uds.freeze_frame import FreezeFrameError, list_snapshot_identification, read_snapshot_record
 from autosvc.core.vehicle.discovery import DiscoveryConfig
@@ -27,6 +28,7 @@ class DiagnosticService:
         self._can_interface = can_interface
         self._can_id_mode = can_id_mode
         self._uds = UdsClient(transport, can_id_mode=can_id_mode)
+        self._adaptations: AdaptationsManager | None = None
 
     def scan_ecus(self) -> list[str]:
         topo = self.scan_topology(DiscoveryConfig(can_id_mode=self._can_id_mode))
@@ -74,6 +76,36 @@ class DiagnosticService:
         for did in dids:
             out.append(self.read_did(ecu, did))
         return out
+
+    # Adaptations (safe ECU configuration changes) are implemented via
+    # dataset-driven profiles and explicit backup/revert safety mechanisms.
+    def list_adaptations(self, ecu: str) -> list[dict[str, object]]:
+        mgr = self._adaptations_manager()
+        return [s.to_dict() for s in mgr.list_settings(ecu)]
+
+    def read_adaptation(self, ecu: str, key: str) -> dict[str, object]:
+        mgr = self._adaptations_manager()
+        return dict(mgr.read_setting(ecu, key))
+
+    def write_adaptation(self, ecu: str, key: str, value: str, *, mode: str) -> dict[str, object]:
+        mgr = self._adaptations_manager()
+        return dict(mgr.write_setting(ecu, key, value, mode=mode))
+
+    def write_adaptation_raw(self, ecu: str, did: int, hex_payload: str, *, mode: str) -> dict[str, object]:
+        mgr = self._adaptations_manager()
+        return dict(mgr.write_raw(ecu, did, hex_payload, mode=mode))
+
+    def revert_adaptation(self, backup_id: str) -> dict[str, object]:
+        mgr = self._adaptations_manager()
+        return dict(mgr.revert(backup_id))
+
+    def _adaptations_manager(self) -> AdaptationsManager:
+        if self._adaptations is None:
+            # Brand selection is shared with the rest of the core:
+            # - explicit `brand=` constructor parameter, OR
+            # - AUTOSVC_BRAND env var (if brand is None)
+            self._adaptations = AdaptationsManager(self._uds, brand=self._brand)
+        return self._adaptations
 
     def _attach_freeze_frames(self, ecu: str, items: list[dict[str, object]]) -> None:
         # Freeze-frame is optional and ECU-dependent. Failure to retrieve it

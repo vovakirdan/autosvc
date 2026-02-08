@@ -22,6 +22,12 @@ Date: 2026-02-06
     - `read_dtcs(ecu)` returning decoded, human-friendly dicts
     - `clear_dtcs(ecu)`
     - `read_did(ecu, did)` and `read_dids(ecu, dids)`
+    - Adaptations v1 (dataset-driven, with backups):
+      - list/read/write adaptation settings via dataset profiles
+      - backup-before-write and revert by backup id
+      - safety modes: `safe|advanced|unsafe` (CLI)
+      - WriteDataByIdentifier (`0x2E`) (minimal)
+      - SecurityAccess scaffold (`0x27`) (no seed/key algorithms)
   - Discovery 2.0
     - Functional scan, physical scan, or both (configurable)
     - Optional UDS session confirmation probing
@@ -44,6 +50,7 @@ Date: 2026-02-06
   - CLI (`autosvc`)
   - Textual TUI (`autosvc tui`)
   - Optional daemon (`autosvc daemon`) using JSONL over Unix socket
+  - Adaptations screen in TUI (in-process only)
 
 ## VAG Semantics v1
 
@@ -74,7 +81,9 @@ What is NOT covered yet:
 
 - ODX parsing
 - VIN/model-specific decoding
-- coding/adaptations and flashing/programming
+- flashing/programming
+- Long coding is not implemented yet
+- SecurityAccess seed/key algorithms are not implemented (writes may be blocked by ECUs)
 
 ## What Is Tested Via Emulator
 
@@ -92,6 +101,7 @@ The Debian emulator validates:
   - read_dtcs
   - read_did (VIN)
   - watch (JSONL live DID events)
+  - adaptations v1 for ECU 09 (dataset-driven DID read/write + revert)
 
 ## Autotest Pipeline (Debian)
 
@@ -117,6 +127,12 @@ uv run autosvc dtc clear --ecu 01 --can vcan0
 uv run autosvc dtc read --ecu 01 --can vcan0
 uv run autosvc did read --ecu 01 --did F190 --can vcan0
 uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
+
+export AUTOSVC_BRAND=vag
+uv run autosvc adapt list --ecu 09 --can vcan0
+uv run autosvc adapt read --ecu 09 --key comfort_close_windows_remote --can vcan0
+uv run autosvc adapt write --ecu 09 --key comfort_close_windows_remote --value true --mode safe --can vcan0
+uv run autosvc adapt revert --backup-id 000001 --can vcan0
 ```
 
 Discovery 2.0 flags:
@@ -144,9 +160,11 @@ sudo tools/autotest.sh vcan0 01
 - No CAN FD
 - ECU discovery uses deterministic defaults (small physical range + functional sweep)
 - UDS coverage is intentionally minimal (service diagnostics only)
-- No security access, no long sessions, and live data coverage is minimal
-- VAG semantics are offline and curated (no ODX, no online databases, no freeze-frame)
-- No coding/adaptations and no flashing/programming
+- SecurityAccess seed/key algorithms are not implemented (writes may be blocked by ECUs)
+- No long sessions, and live data coverage is minimal
+- VAG semantics are offline and curated (no ODX, no online databases)
+- No flashing/programming
+- Long coding is not implemented yet
 
 ## Manual Coverage vs Features
 
@@ -157,6 +175,7 @@ Major features and their manual coverage:
 - Discovery 2.0 (functional/physical/both; 11-bit/29-bit): `docs/manual/DISCOVERY.md`
 - DTC read/clear + decode: `docs/manual/DTC.md`
 - Live data (`0x22`) and watch lists: `docs/manual/LIVE_DATA.md`
+- Adaptations (dataset-driven, safe writes): `docs/manual/ADAPTATIONS.md`
 - Emulator + Debian autotest flow: `docs/manual/EMULATOR.md`
 - Troubleshooting: `docs/manual/COMMON_PROBLEMS.md`
 - Limitations / non-goals: `docs/manual/LIMITATIONS.md`

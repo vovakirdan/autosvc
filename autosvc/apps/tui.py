@@ -7,8 +7,8 @@ from typing import Any, Protocol
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, ListItem, ListView, Static
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, ListItem, ListView, Static
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.transport.socketcan import SocketCanTransport
@@ -22,6 +22,10 @@ class AutosvcApi(Protocol):
     def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]: ...
     def clear_dtcs(self, ecu: str) -> None: ...
     def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]: ...
+    def list_adaptations(self, ecu: str) -> list[dict[str, object]]: ...
+    def read_adaptation(self, ecu: str, key: str) -> dict[str, object]: ...
+    def write_adaptation(self, ecu: str, key: str, value: str, *, mode: str) -> dict[str, object]: ...
+    def revert_adaptation(self, backup_id: str) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,18 @@ class InProcessApi:
 
     def read_dids(self, ecu: str, dids: list[int]) -> list[dict[str, object]]:
         return self._service.read_dids(ecu, dids)
+
+    def list_adaptations(self, ecu: str) -> list[dict[str, object]]:
+        return self._service.list_adaptations(ecu)
+
+    def read_adaptation(self, ecu: str, key: str) -> dict[str, object]:
+        return self._service.read_adaptation(ecu, key)
+
+    def write_adaptation(self, ecu: str, key: str, value: str, *, mode: str) -> dict[str, object]:
+        return self._service.write_adaptation(ecu, key, value, mode=mode)
+
+    def revert_adaptation(self, backup_id: str) -> dict[str, object]:
+        return self._service.revert_adaptation(backup_id)
 
 
 class IpcApi:
@@ -124,6 +140,18 @@ class IpcApi:
             if isinstance(item, dict):
                 out.append(item)
         return out
+
+    def list_adaptations(self, ecu: str) -> list[dict[str, object]]:
+        raise RuntimeError("adaptations are not available in daemon mode")
+
+    def read_adaptation(self, ecu: str, key: str) -> dict[str, object]:
+        raise RuntimeError("adaptations are not available in daemon mode")
+
+    def write_adaptation(self, ecu: str, key: str, value: str, *, mode: str) -> dict[str, object]:
+        raise RuntimeError("adaptations are not available in daemon mode")
+
+    def revert_adaptation(self, backup_id: str) -> dict[str, object]:
+        raise RuntimeError("adaptations are not available in daemon mode")
 
 
 def _raise_on_error(resp: dict[str, Any]) -> None:
@@ -236,6 +264,7 @@ class DtcScreen(Screen[None]):
                 yield Button("Refresh", id="refresh")
                 yield Button("Clear DTCs", id="clear")
                 yield Button("Live", id="live")
+                yield Button("Adapt", id="adapt")
             yield Static("", id="status")
             table = DataTable(id="dtc_table")
             table.add_columns("Code", "Status", "Severity", "Description")
@@ -266,6 +295,8 @@ class DtcScreen(Screen[None]):
             return
         if event.button.id == "live":
             self.app.push_screen(LiveScreen(self._api, self._ecu))
+        if event.button.id == "adapt":
+            self.app.push_screen(AdaptationsScreen(self._api, self._ecu))
 
     def _refresh(self) -> None:
         status = self.query_one("#status", Static)
@@ -408,6 +439,173 @@ class LiveScreen(Screen[None]):
                 str(item.get("value", "")),
                 str(item.get("unit", "")),
             )
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        yield Static("Confirm", id="title")
+        with Vertical(id="panel"):
+            yield Static(self._message, id="status")
+            with Horizontal():
+                yield Button("Cancel", id="cancel")
+                yield Button("Yes", id="yes")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "yes":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+
+class AdaptationsScreen(Screen[None]):
+    def __init__(self, api: AutosvcApi, ecu: str) -> None:
+        super().__init__()
+        self._api = api
+        self._ecu = ecu
+        self._settings: list[dict[str, object]] = []
+        self._selected_key: str | None = None
+        self._last_backup_id: str | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"Adaptations (ECU {self._ecu})", id="title")
+        with Vertical(id="panel"):
+            with Horizontal():
+                yield Button("Back", id="back")
+                yield Button("Refresh", id="refresh")
+                yield Button("Apply", id="apply")
+                yield Button("Revert", id="revert")
+            yield Static("", id="status")
+            table = DataTable(id="adapt_table")
+            table.add_columns("Key", "Label", "Kind", "Risk", "DID")
+            yield table
+            yield Static("New value:")
+            yield Input(placeholder="Enter value (e.g. true/false/1/0)", id="adapt_value")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#adapt_table", DataTable)
+        table.cursor_type = "row"
+        self._refresh()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id != "adapt_table":
+            return
+        row = int(getattr(event, "cursor_row", -1))
+        if row < 0 or row >= len(self._settings):
+            return
+        item = self._settings[row]
+        key = str(item.get("key") or "")
+        self._selected_key = key
+        self._read_selected()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.app.pop_screen()
+            return
+        if event.button.id == "refresh":
+            self._refresh()
+            return
+        if event.button.id == "apply":
+            self._apply()
+            return
+        if event.button.id == "revert":
+            self._revert()
+
+    def _refresh(self) -> None:
+        status = self.query_one("#status", Static)
+        status.update("Loading dataset settings...")
+        table = self.query_one("#adapt_table", DataTable)
+        table.clear()
+        self._selected_key = None
+        try:
+            settings = self._api.list_adaptations(self._ecu)
+        except Exception as exc:
+            status.update(f"Error: {exc}")
+            return
+        self._settings = list(settings or [])
+        if not self._settings:
+            status.update("No adaptation settings for this ECU.")
+            return
+        status.update(f"{len(self._settings)} setting(s). Select one to read current value.")
+        for s in self._settings:
+            if not isinstance(s, dict):
+                continue
+            table.add_row(
+                str(s.get("key") or ""),
+                str(s.get("label") or ""),
+                str(s.get("kind") or ""),
+                str(s.get("risk") or ""),
+                str(s.get("did") or ""),
+            )
+
+    def _read_selected(self) -> None:
+        if not self._selected_key:
+            return
+        status = self.query_one("#status", Static)
+        try:
+            item = self._api.read_adaptation(self._ecu, self._selected_key)
+        except Exception as exc:
+            status.update(f"Error: {exc}")
+            return
+        if isinstance(item, dict):
+            status.update(
+                f"{item.get('key')} = {item.get('value')} (raw={item.get('raw')}, kind={item.get('kind')}, risk={item.get('risk')})"
+            )
+
+    def _apply(self) -> None:
+        if not self._selected_key:
+            self.query_one("#status", Static).update("Select a setting first.")
+            return
+        value = self.query_one("#adapt_value", Input).value
+
+        def _after_confirm(ok: bool) -> None:
+            if not ok:
+                self.query_one("#status", Static).update("Cancelled.")
+                return
+            status = self.query_one("#status", Static)
+            status.update("Writing...")
+            try:
+                result = self._api.write_adaptation(self._ecu, self._selected_key or "", value, mode="safe")
+            except Exception as exc:
+                status.update(f"Error: {exc}")
+                return
+            if isinstance(result, dict):
+                backup_id = result.get("backup_id")
+                self._last_backup_id = str(backup_id) if backup_id else None
+                status.update(f"Wrote. backup_id={backup_id}")
+                self._read_selected()
+
+        self.app.push_screen(
+            ConfirmScreen(f"Write {self._selected_key} = {value} (safe mode)?"),
+            _after_confirm,
+        )
+
+    def _revert(self) -> None:
+        if not self._last_backup_id:
+            self.query_one("#status", Static).update("No backup id available in this session.")
+            return
+
+        backup_id = self._last_backup_id
+
+        def _after_confirm(ok: bool) -> None:
+            if not ok:
+                self.query_one("#status", Static).update("Cancelled.")
+                return
+            status = self.query_one("#status", Static)
+            status.update("Reverting...")
+            try:
+                result = self._api.revert_adaptation(backup_id)
+            except Exception as exc:
+                status.update(f"Error: {exc}")
+                return
+            status.update(f"Reverted backup_id={backup_id}")
+            _ = result
+            self._read_selected()
+
+        self.app.push_screen(ConfirmScreen(f"Revert backup_id={backup_id}?"), _after_confirm)
 
 
 def main(argv: list[str] | None = None) -> None:

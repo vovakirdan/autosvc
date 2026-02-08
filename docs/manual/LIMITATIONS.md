@@ -13,9 +13,10 @@ This document is intentionally blunt. If you need these capabilities, do not ass
 ## Diagnostic Coverage
 
 - Service diagnostics only.
-- No security access (`0x27`), no unlocking, no key learning.
+- SecurityAccess (`0x27`) seed/key algorithms are not implemented (writes may be blocked by ECUs).
 - No flashing/programming.
-- No coding/adaptations.
+- Adaptations are limited and dataset-driven (see `docs/manual/ADAPTATIONS.md`).
+- No long coding yet.
 - No long/complex diagnostic sessions (coverage is intentionally minimal).
 - Live data support is minimal and DID coverage is not comprehensive.
 
@@ -35,4 +36,3 @@ This document is intentionally blunt. If you need these capabilities, do not ass
 - tools that implement full brand-specific semantics, guided fault finding, and coding
 
 Use `autosvc` as a focused service-diagnostics tool and a research/development platform.
-

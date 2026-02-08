@@ -5,8 +5,8 @@ This document is the canonical reference for how work in this repo must be done.
 ## Project Mission
 
 - Goal: plug a laptop into a CAN-based car and quickly obtain service diagnostics results.
-- Primary user outcomes: ECU discovery (scan); DTC read/clear with human-friendly decoding; basic live data reads (UDS DIDs) and watch/polling.
-- Service-level diagnostics only. This project is not a vehicle programming tool.
+- Primary user outcomes: ECU discovery (scan); DTC read/clear with human-friendly decoding; basic live data reads (UDS DIDs) and watch/polling; limited, dataset-driven adaptations with backups.
+- Service-level work only. This project is not a vehicle programming tool.
 
 ## Scope (What We Support)
 
@@ -15,11 +15,13 @@ This document is the canonical reference for how work in this repo must be done.
 - Client frontends: CLI (`autosvc`) for scripting and automation; Textual TUI (`autosvc tui`) for interactive use; optional local daemon (`autosvc daemon`) using JSON Lines over a Unix socket.
 - Debian-friendly ECU emulator (`autosvc-ecu-sim`) for development and deterministic automated tests.
 - Deterministic golden-based regression tests under `fixtures/goldens/`.
+- Dataset-driven adaptations (WriteDataByIdentifier / `0x2E`) with backup/revert safety, where explicitly supported by a local dataset pack.
 
 ## Non-Goals (What We Do NOT Do)
 
 - No flashing/programming/calibration.
-- No coding/adaptations/immobilizer work.
+- No long coding (unless explicitly added as a planned feature with datasets, backups, and tests).
+- No immobilizer work.
 - No cloud services, no telemetry, no background data collection.
 - No K-line / KWP2000 support (unless explicitly added later).
 - No heavy RPC frameworks (no gRPC, no JSON-RPC).

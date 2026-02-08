@@ -1,0 +1,16 @@
+{
+  "item": {
+    "did": "1234",
+    "ecu": "09",
+    "ecu_name": "Central Electronics",
+    "key": "comfort_close_windows_remote",
+    "kind": "bool",
+    "label": "Comfort closing via remote",
+    "notes": "If supported by BCM/door modules",
+    "raw": "00",
+    "risk": "safe",
+    "value": false
+  },
+  "ok": true
+}
+

@@ -8,6 +8,7 @@ from typing import Any
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.live.watch import WatchItem, Watcher
+from autosvc.core.safety.confirm import confirm_or_raise
 from autosvc.core.transport.socketcan import SocketCanTransport
 from autosvc.core.uds.did import parse_did
 from autosvc.core.vehicle.discovery import DiscoveryConfig
@@ -86,6 +87,54 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_args(watch_p)
     _add_connect_arg(watch_p)
     _add_can_id_mode_arg(watch_p)
+
+    adapt_p = sub.add_parser("adapt", help="Adaptations (dataset-driven, with backup/revert safety)")
+    adapt_sub = adapt_p.add_subparsers(dest="adapt_cmd", required=True)
+
+    adapt_list_p = adapt_sub.add_parser("list", help="List available adaptation settings for an ECU")
+    adapt_list_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    adapt_list_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_list_p)
+    _add_connect_arg(adapt_list_p)
+    _add_can_id_mode_arg(adapt_list_p)
+
+    adapt_read_p = adapt_sub.add_parser("read", help="Read an adaptation setting")
+    adapt_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    adapt_read_p.add_argument("--key", required=True, help="Dataset setting key")
+    adapt_read_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_read_p)
+    _add_connect_arg(adapt_read_p)
+    _add_can_id_mode_arg(adapt_read_p)
+
+    adapt_write_p = adapt_sub.add_parser("write", help="Write an adaptation setting (with backup)")
+    adapt_write_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    adapt_write_p.add_argument("--key", required=True, help="Dataset setting key")
+    adapt_write_p.add_argument("--value", required=True, help="New value (format depends on kind)")
+    adapt_write_p.add_argument("--mode", choices=["safe", "advanced", "unsafe"], default="safe")
+    adapt_write_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    adapt_write_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_write_p)
+    _add_connect_arg(adapt_write_p)
+    _add_can_id_mode_arg(adapt_write_p)
+
+    adapt_raw_p = adapt_sub.add_parser("write-raw", help="Unsafe raw DID write (with backup)")
+    adapt_raw_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    adapt_raw_p.add_argument("--did", required=True, help="DID as hex (e.g. 1234)")
+    adapt_raw_p.add_argument("--hex", dest="hex_payload", required=True, help="Raw bytes as hex (e.g. 01)")
+    adapt_raw_p.add_argument("--mode", choices=["unsafe"], default="unsafe")
+    adapt_raw_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    adapt_raw_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_raw_p)
+    _add_connect_arg(adapt_raw_p)
+    _add_can_id_mode_arg(adapt_raw_p)
+
+    adapt_rev_p = adapt_sub.add_parser("revert", help="Revert a previous write using a backup id")
+    adapt_rev_p.add_argument("--backup-id", required=True, help="Backup id (e.g. 000001)")
+    adapt_rev_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    adapt_rev_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_rev_p)
+    _add_connect_arg(adapt_rev_p)
+    _add_can_id_mode_arg(adapt_rev_p)
 
     args = parser.parse_args(argv)
 
@@ -221,6 +270,99 @@ def main(argv: list[str] | None = None) -> None:
         )
         raise SystemExit(0)
 
+    if args.cmd == "adapt":
+        connect = getattr(args, "connect", None) or args.global_connect
+        if connect:
+            _print_json({"ok": False, "error": "adaptations are not available in daemon mode"})
+            raise SystemExit(1)
+
+        if args.adapt_cmd == "list":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_list",
+                ecu=args.ecu,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_adapt_list(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.adapt_cmd == "read":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_read",
+                ecu=args.ecu,
+                key=args.key,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_adapt_read(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.adapt_cmd == "write":
+            if args.mode in {"advanced", "unsafe"}:
+                confirm_or_raise(
+                    f"About to write adaptation ECU={args.ecu} key={args.key} value={args.value} mode={args.mode}.",
+                    assume_yes=bool(args.yes),
+                )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_write",
+                ecu=args.ecu,
+                key=args.key,
+                value=args.value,
+                mode=args.mode,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_adapt_write(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.adapt_cmd == "write-raw":
+            confirm_or_raise(
+                f"About to perform raw DID write ECU={args.ecu} DID={args.did} HEX={args.hex_payload}.",
+                assume_yes=bool(args.yes),
+            )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_write_raw",
+                ecu=args.ecu,
+                did=args.did,
+                hex_payload=args.hex_payload,
+                mode=args.mode,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_adapt_write(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.adapt_cmd == "revert":
+            confirm_or_raise(
+                f"About to revert adaptation backup_id={args.backup_id}.",
+                assume_yes=bool(args.yes),
+            )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_revert",
+                backup_id=args.backup_id,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_adapt_write(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        parser.error("unknown adapt command")
+
     parser.error("unknown command")
 
 
@@ -263,6 +405,11 @@ def _run_inprocess(
     op: str,
     ecu: str | None = None,
     did: str | None = None,
+    key: str | None = None,
+    value: str | None = None,
+    mode: str | None = None,
+    hex_payload: str | None = None,
+    backup_id: str | None = None,
     with_freeze_frame: bool = False,
     addressing: str = "both",
     timeout_ms: int = 250,
@@ -308,12 +455,77 @@ def _run_inprocess(
             assert did is not None
             did_int = parse_did(did)
             return {"ok": True, "item": service.read_did(ecu, did_int)}
+        if op == "adapt_list":
+            assert ecu is not None
+            return {"ok": True, "ecu": str(ecu).upper(), "settings": service.list_adaptations(ecu)}
+        if op == "adapt_read":
+            assert ecu is not None
+            assert key is not None
+            return {"ok": True, "item": service.read_adaptation(ecu, key)}
+        if op == "adapt_write":
+            assert ecu is not None
+            assert key is not None
+            assert value is not None
+            assert mode is not None
+            return {"ok": True, "result": service.write_adaptation(ecu, key, value, mode=mode)}
+        if op == "adapt_write_raw":
+            assert ecu is not None
+            assert did is not None
+            assert hex_payload is not None
+            assert mode is not None
+            did_int = parse_did(did)
+            return {"ok": True, "result": service.write_adaptation_raw(ecu, did_int, hex_payload, mode=mode)}
+        if op == "adapt_revert":
+            assert backup_id is not None
+            return {"ok": True, "result": service.revert_adaptation(backup_id)}
         return {"ok": False, "error": "invalid operation"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
     finally:
         if transport is not None:
             transport.close()
+
+
+def _print_adapt_list(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    ecu = str(resp.get("ecu") or "")
+    settings = resp.get("settings") or []
+    sys.stdout.write(f"ECU {ecu} settings:\n")
+    if not isinstance(settings, list) or not settings:
+        sys.stdout.write("(none)\n")
+        return
+    for item in settings:
+        if not isinstance(item, dict):
+            continue
+        sys.stdout.write(
+            f"- {item.get('key')} ({item.get('kind')}, risk={item.get('risk')}, did={item.get('did')}): {item.get('label')}\n"
+        )
+
+
+def _print_adapt_read(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    item = resp.get("item") or {}
+    if not isinstance(item, dict):
+        sys.stdout.write("error: invalid response\n")
+        return
+    sys.stdout.write(
+        f"{item.get('ecu')} {item.get('ecu_name')} {item.get('key')} ({item.get('kind')}, did={item.get('did')}): {item.get('value')}\n"
+    )
+
+
+def _print_adapt_write(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    result = resp.get("result") or {}
+    if isinstance(result, dict) and result.get("backup_id"):
+        sys.stdout.write(f"OK backup_id={result.get('backup_id')}\n")
+    else:
+        sys.stdout.write("OK\n")
 
 
 def _parse_watch_items(value: str) -> list[WatchItem]:

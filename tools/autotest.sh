@@ -195,6 +195,28 @@ kill "${EMU_PID}" >/dev/null 2>&1 || true
 wait "${EMU_PID}" >/dev/null 2>&1 || true
 EMU_PID=""
 
+uv run autosvc-ecu-sim --can "${CAN_IF}" --can-id-mode 11bit --ecu 09 >"${TMP_DIR}/emulator-adapt.log" 2>&1 &
+EMU_PID="$!"
+sleep 0.2
+
+export AUTOSVC_BRAND="vag"
+export AUTOSVC_DATASETS_DIR="${ROOT_DIR}/datasets"
+export AUTOSVC_BACKUP_DIR="${TMP_DIR}/backups"
+
+run_case "adapt_list_09" adapt list --ecu 09 --can "${CAN_IF}" --json || ok=1
+run_case "adapt_read_09_ccwr_before" adapt read --ecu 09 --key comfort_close_windows_remote --can "${CAN_IF}" --json || ok=1
+run_case "adapt_write_09_ccwr_true" adapt write --ecu 09 --key comfort_close_windows_remote --value true --mode safe --yes --can "${CAN_IF}" --json || ok=1
+run_case "adapt_read_09_ccwr_after" adapt read --ecu 09 --key comfort_close_windows_remote --can "${CAN_IF}" --json || ok=1
+run_case "adapt_revert_000001" adapt revert --backup-id 000001 --yes --can "${CAN_IF}" --json || ok=1
+run_case "adapt_read_09_ccwr_restored" adapt read --ecu 09 --key comfort_close_windows_remote --can "${CAN_IF}" --json || ok=1
+run_case "adapt_write_09_security_fail" adapt write --ecu 09 --key security_demo_protected --value 1 --mode safe --yes --can "${CAN_IF}" --json || ok=1
+
+unset AUTOSVC_BRAND
+
+kill "${EMU_PID}" >/dev/null 2>&1 || true
+wait "${EMU_PID}" >/dev/null 2>&1 || true
+EMU_PID=""
+
 uv run autosvc-ecu-sim --can "${CAN_IF}" --can-id-mode 29bit >"${TMP_DIR}/emulator-29bit.log" 2>&1 &
 EMU_PID="$!"
 sleep 0.2

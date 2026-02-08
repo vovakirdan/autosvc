@@ -10,10 +10,12 @@ We do:
 - Clear DTCs
 - Read a small set of UDS live data (ReadDataByIdentifier / DIDs)
 - Watch/poll live data and print JSONL events (tick-based)
+- Dataset-driven adaptations (safe configuration writes) with backup/revert (limited)
 
 We don't:
 - Flash ECUs
-- Do coding/adaptations/immobilizer work
+- Do long coding (yet)
+- Do immobilizer work
 - Support safety-critical operations
 
 ## Requirements
@@ -51,6 +53,7 @@ uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 
 - Setup: `docs/manual/SETUP.md`
 - First diagnostic session: `docs/manual/FIRST_DIAG.md`
+- Adaptations (safe writes): `docs/manual/ADAPTATIONS.md`
 
 ## Run The TUI (Textual)
 

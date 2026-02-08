@@ -1,0 +1,52 @@
+{
+  "ecu": "09",
+  "ecu_name": "Central Electronics",
+  "settings": [
+    {
+      "key": "comfort_close_windows_remote",
+      "label": "Comfort closing via remote",
+      "kind": "bool",
+      "read": {
+        "service": "did",
+        "id": "1234"
+      },
+      "write": {
+        "service": "did",
+        "id": "1234"
+      },
+      "risk": "safe",
+      "notes": "If supported by BCM/door modules"
+    },
+    {
+      "key": "coming_home_time_s",
+      "label": "Coming-home timer",
+      "kind": "u16",
+      "read": {
+        "service": "did",
+        "id": "1237"
+      },
+      "write": {
+        "service": "did",
+        "id": "1237"
+      },
+      "risk": "safe",
+      "notes": "Emulator/demo value"
+    },
+    {
+      "key": "security_demo_protected",
+      "label": "Security protected demo setting",
+      "kind": "u8",
+      "read": {
+        "service": "did",
+        "id": "1337"
+      },
+      "write": {
+        "service": "did",
+        "id": "1337"
+      },
+      "risk": "safe",
+      "notes": "Write should fail with security required in the emulator"
+    }
+  ]
+}
+

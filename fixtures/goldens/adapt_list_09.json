@@ -1,0 +1,33 @@
+{
+  "ecu": "09",
+  "ok": true,
+  "settings": [
+    {
+      "did": "1234",
+      "ecu": "09",
+      "key": "comfort_close_windows_remote",
+      "kind": "bool",
+      "label": "Comfort closing via remote",
+      "notes": "If supported by BCM/door modules",
+      "risk": "safe"
+    },
+    {
+      "did": "1237",
+      "ecu": "09",
+      "key": "coming_home_time_s",
+      "kind": "u16",
+      "label": "Coming-home timer",
+      "notes": "Emulator/demo value",
+      "risk": "safe"
+    },
+    {
+      "did": "1337",
+      "ecu": "09",
+      "key": "security_demo_protected",
+      "kind": "u8",
+      "label": "Security protected demo setting",
+      "notes": "Write should fail with security required in the emulator",
+      "risk": "safe"
+    }
+  ]
+}

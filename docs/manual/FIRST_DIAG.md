@@ -106,3 +106,12 @@ Work through this list:
 
 If you still get nothing, it may not be UDS on CAN (or it may be gated by a gateway/security).
 
+## 8) Configuration Changes (Adaptations)
+
+If your goal is only diagnostics, stop after discovery + DTCs + (optionally) live data.
+
+If you do intend to change ECU configuration, read the adaptations safety rules first:
+
+- `docs/manual/ADAPTATIONS.md`
+
+Always treat writes as potentially risky, and keep backups.
