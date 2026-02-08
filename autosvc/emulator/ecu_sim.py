@@ -164,6 +164,8 @@ class EcuSimulator:
     vin: str
     part_number: str
     rpm_reads: int = 0
+    dids: dict[int, bytes] | None = None
+    protected_write_dids: set[int] | None = None
 
     def ecu(self) -> str:
         return f"{self.ecu_int:02X}"
@@ -200,6 +202,11 @@ class EcuSimulator:
             if len(payload) < 3:
                 return bytes([0x7F, sid, 0x13])  # incorrect message length or invalid format
             did = (payload[1] << 8) | payload[2]
+            if self.dids is None:
+                self.dids = {}
+            if did in self.dids:
+                data = self.dids[did]
+                return bytes([0x62, payload[1], payload[2]]) + data
             if did == 0xF190:
                 data = self.vin.encode("ascii", errors="replace")
             elif did == 0xF187:
@@ -212,6 +219,22 @@ class EcuSimulator:
             else:
                 return bytes([0x7F, sid, 0x31])  # request out of range
             return bytes([0x62, payload[1], payload[2]]) + data
+
+        if sid == 0x2E:
+            # WriteDataByIdentifier (DID). Minimal deterministic behavior:
+            # - Writes update an in-memory DID store per ECU.
+            # - One DID may be write-protected and returns a security NRC.
+            if len(payload) < 3:
+                return bytes([0x7F, sid, 0x13])
+            did = (payload[1] << 8) | payload[2]
+            data = payload[3:]
+            if self.dids is None:
+                self.dids = {}
+            protected = self.protected_write_dids or set()
+            if did in protected:
+                return bytes([0x7F, sid, 0x33])  # securityAccessDenied (simulated)
+            self.dids[did] = bytes(data)
+            return bytes([0x6E, payload[1], payload[2]])
 
         if sid == 0x19:
             if len(payload) < 2:
@@ -321,7 +344,29 @@ def main(argv: list[str] | None = None) -> None:
             dtcs = []
         vin = "WVWZZZ00000000001"
         part_number = f"AUTOSVC-ECU{ecu_int:02X}"
-        ecus.append(EcuSimulator(ecu_int=ecu_int, dtcs=dtcs, vin=vin, part_number=part_number))
+        dids: dict[int, bytes] | None = None
+        protected: set[int] | None = None
+        if ecu_int == 0x09:
+            # ECU 09 adaptation demo:
+            # - 0x1234: bool setting (0x00/0x01)
+            # - 0x1237: u16 setting (big-endian)
+            # - 0x1337: write-protected (simulated security requirement)
+            dids = {
+                0x1234: b"\x00",
+                0x1237: int(42).to_bytes(2, byteorder="big", signed=False),
+                0x1337: b"\x00",
+            }
+            protected = {0x1337}
+        ecus.append(
+            EcuSimulator(
+                ecu_int=ecu_int,
+                dtcs=dtcs,
+                vin=vin,
+                part_number=part_number,
+                dids=dids,
+                protected_write_dids=protected,
+            )
+        )
 
     request_map = {ecu.request_id(args.can_id_mode): ecu for ecu in ecus}
 
