@@ -8,6 +8,8 @@ import sys
 import uuid
 from typing import Any
 
+from autosvc.runlog import TeeTextIO, create_run_log_dir
+
 from autosvc.core.service import DiagnosticService
 from autosvc.core.live.watch import WatchItem, Watcher
 from autosvc.core.safety.confirm import confirm_or_raise
@@ -170,17 +172,36 @@ def main(argv: list[str] | None = None) -> None:
     else:
         level = parse_log_level(level_name)
 
-    setup_logging(
-        level=level,
-        log_format=str(getattr(args, "log_format", "pretty") or "pretty"),
-        log_file=getattr(args, "log_file", None),
-        no_color=bool(getattr(args, "no_color", False)),
-    )
-
     trace_id = uuid.uuid4().hex[:12]
-    with trace_context(trace_id):
-        log.debug("CLI start", extra={"cmd": getattr(args, "cmd", None), "trace_id": trace_id})
-        _dispatch(args)
+
+    log_file = getattr(args, "log_file", None)
+    runlog = None
+    result_fh = None
+    stdout_orig = sys.stdout
+    try:
+        if getattr(args, "log_dir", None):
+            argv_for_meta = [parser.prog] + (list(argv) if argv is not None else sys.argv[1:])
+            runlog = create_run_log_dir(str(args.log_dir), trace_id=trace_id, argv=argv_for_meta)
+            if not log_file:
+                log_file = str(runlog.log_path)
+            result_fh = open(runlog.result_path, "w", encoding="utf-8")
+            sys.stdout = TeeTextIO(sys.stdout, result_fh)
+
+        setup_logging(
+            level=level,
+            log_format=str(getattr(args, "log_format", "pretty") or "pretty"),
+            log_file=log_file,
+            no_color=bool(getattr(args, "no_color", False)),
+        )
+
+        with trace_context(trace_id):
+            log.debug("CLI start", extra={"cmd": getattr(args, "cmd", None), "trace_id": trace_id})
+            _dispatch(args)
+    finally:
+        sys.stdout = stdout_orig
+        if result_fh is not None:
+            result_fh.flush()
+            result_fh.close()
 
 
 def _dispatch(args: argparse.Namespace) -> None:
@@ -425,6 +446,8 @@ def _logging_argv_from_args(args: argparse.Namespace) -> list[str]:
         out.extend(["--log-level", str(args.log_level)])
     if getattr(args, "log_file", None):
         out.extend(["--log-file", str(args.log_file)])
+    if getattr(args, "log_dir", None):
+        out.extend(["--log-dir", str(args.log_dir)])
     if getattr(args, "log_format", None):
         out.extend(["--log-format", str(args.log_format)])
     if getattr(args, "no_color", False):
@@ -453,22 +476,45 @@ def _add_discovery_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
+    # Use SUPPRESS defaults so that root-level flags (placed before the subcommand)
+    # are not overwritten by subparser defaults.
     parser.add_argument(
         "--log-level",
         choices=["error", "warning", "info", "debug", "trace"],
-        default=None,
+        default=argparse.SUPPRESS,
         help="Logging level (default: info)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Alias for --log-level=debug")
-    parser.add_argument("--trace", action="store_true", help="Alias for --log-level=trace")
-    parser.add_argument("--log-file", default=None, help="Optional log file path")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Alias for --log-level=debug",
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Alias for --log-level=trace",
+    )
+    parser.add_argument("--log-file", default=argparse.SUPPRESS, help="Optional log file path")
+    parser.add_argument(
+        "--log-dir",
+        default=argparse.SUPPRESS,
+        help="Optional directory to create a per-run log bundle (autosvc.log, result.json, metadata.json)",
+    )
     parser.add_argument(
         "--log-format",
         choices=["pretty", "json"],
-        default="pretty",
+        default=argparse.SUPPRESS,
         help="Log output format (default: pretty)",
     )
-    parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in pretty logs")
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Disable ANSI colors in pretty logs",
+    )
 
 
 def _print_json(payload: dict[str, Any]) -> None:

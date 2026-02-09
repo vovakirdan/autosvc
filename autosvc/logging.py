@@ -204,5 +204,9 @@ def setup_logging(
 
     logging.basicConfig(level=int(level), handlers=handlers, force=True)
 
-    # Make python-can a bit quieter by default unless explicitly enabled.
-    logging.getLogger("can").setLevel(max(int(level), logging.INFO))
+    # Make third-party libraries quieter by default.
+    # Keep autosvc INFO logs visible, but avoid python-can INFO noise unless debugging.
+    third_party_level = logging.WARNING
+    if int(level) <= TRACE_LEVEL or int(level) <= logging.DEBUG:
+        third_party_level = logging.DEBUG
+    logging.getLogger("can").setLevel(int(third_party_level))

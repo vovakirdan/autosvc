@@ -55,6 +55,54 @@ uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 - First diagnostic session: `docs/manual/FIRST_DIAG.md`
 - Adaptations (safe writes): `docs/manual/ADAPTATIONS.md`
 
+## Real car troubleshooting / tuning
+
+On a real vehicle, discovery and UDS reads are sensitive to bus setup and timing.
+If your results are inconsistent (or empty), try the knobs below.
+
+Common failure modes and what to tweak:
+
+- **Nothing found / empty scan**
+  - Try the other CAN ID mode: `--can-id-mode 11bit` vs `--can-id-mode 29bit`.
+  - Try addressing selection: `--addressing functional` (broadcast) or `--addressing physical` (direct).
+  - Increase timeouts: `--timeout-ms 500` or `--timeout-ms 1000`.
+  - Increase retries: `--retries 2` or `--retries 3`.
+
+- **Intermittent timeouts / flaky responses**
+  - Increase `--timeout-ms` and `--retries`.
+  - Prefer `--addressing physical` if functional requests are noisy on your bus.
+  - Verify adapter/bitrate/wiring on the Linux side (SocketCAN must be up and error-free).
+
+- **ECU answers once, then stops responding**
+  - Some ECUs dislike extra session probing during discovery.
+    Try `--no-probe-session` (i.e. `--probe-session false`).
+
+Examples (real car, in-process mode):
+
+```bash
+# Scan with more conservative timing
+uv run autosvc --log-dir /tmp/autosvc-bundles scan --can can0 \
+  --timeout-ms 500 --retries 2 --addressing both --can-id-mode 11bit
+
+# Deterministic topology scan (physical only)
+uv run autosvc --log-dir /tmp/autosvc-bundles topo scan --can can0 \
+  --timeout-ms 500 --retries 2 --addressing physical --can-id-mode 11bit
+
+# Read DTCs from a known ECU address (example: 0x01)
+uv run autosvc --log-dir /tmp/autosvc-bundles dtc read --ecu 01 --can can0 --can-id-mode 11bit
+
+# If you suspect 29-bit addressing on your platform
+uv run autosvc --log-dir /tmp/autosvc-bundles dtc read --ecu 01 --can can0 --can-id-mode 29bit
+```
+
+Collecting a log bundle for bug reports:
+
+- Add `--log-dir DIR` to create a per-run folder with:
+  - `autosvc.log` (stderr logs)
+  - `result.json` (stdout capture)
+  - `metadata.json` (timestamp, argv, trace_id)
+- For deep diagnostics, also add `--log-level debug` (UDS payloads) or `--trace` (very noisy).
+
 ## Logging
 
 By default, `autosvc` prints **command results to stdout** and **logs to stderr**.
@@ -76,6 +124,9 @@ uv run autosvc --trace dtc read --ecu 01 --can vcan0
 
 # JSON logs to a file, while stdout stays machine-readable
 uv run autosvc --log-format json --log-file /tmp/autosvc.jsonl dtc read --ecu 01 --can vcan0 > /tmp/result.json
+
+# Create a per-run log bundle folder (autosvc.log + result.json + metadata.json)
+uv run autosvc --log-dir /tmp/autosvc-bundles dtc read --ecu 01 --can vcan0
 ```
 
 Log levels:
