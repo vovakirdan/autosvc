@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import logging
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.transport.socketcan import SocketCanTransport
 from autosvc.ipc.unix_server import JsonlUnixServer
+from autosvc.logging import TRACE_LEVEL, parse_log_level, setup_logging
+
+
+log = logging.getLogger(__name__)
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--log-level",
+        choices=["error", "warning", "info", "debug", "trace"],
+        default=None,
+        help="Logging level (default: info)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Alias for --log-level=debug")
+    parser.add_argument("--trace", action="store_true", help="Alias for --log-level=trace")
+    parser.add_argument("--log-file", default=None, help="Optional log file path")
+    parser.add_argument("--log-format", choices=["pretty", "json"], default="pretty")
+    parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in pretty logs")
+
     parser.add_argument("--can", default="vcan0", help="SocketCAN interface (e.g. can0, vcan0)")
     parser.add_argument("--can-id-mode", choices=["11bit", "29bit"], default="11bit")
     parser.add_argument("--sock", default="/tmp/autosvc.sock", help="Unix socket path")
@@ -18,6 +35,26 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="autosvc daemon (JSONL over Unix socket)")
     build_parser(parser)
     args = parser.parse_args(argv)
+
+    level_name: str | None = getattr(args, "log_level", None)
+    if getattr(args, "trace", False):
+        level = TRACE_LEVEL
+    elif getattr(args, "verbose", False):
+        level = logging.DEBUG
+    else:
+        level = parse_log_level(level_name)
+
+    setup_logging(
+        level=level,
+        log_format=str(getattr(args, "log_format", "pretty") or "pretty"),
+        log_file=getattr(args, "log_file", None),
+        no_color=bool(getattr(args, "no_color", False)),
+    )
+
+    log.info(
+        "Daemon starting",
+        extra={"can_interface": args.can, "can_id_mode": args.can_id_mode, "sock": args.sock, "brand": args.brand},
+    )
 
     transport = SocketCanTransport(channel=args.can, is_extended_id=(args.can_id_mode == "29bit"))
     service = DiagnosticService(

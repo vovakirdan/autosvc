@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import socket
 import sys
+import uuid
 from typing import Any
 
 from autosvc.core.service import DiagnosticService
@@ -13,10 +15,15 @@ from autosvc.core.transport.socketcan import SocketCanTransport
 from autosvc.core.uds.did import parse_did
 from autosvc.core.vehicle.discovery import DiscoveryConfig
 from autosvc.ipc.unix_client import UnixJsonlClient
+from autosvc.logging import TRACE_LEVEL, parse_log_level, setup_logging, trace_context
+
+
+log = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="autosvc", description="Automotive service diagnostics (CLI/TUI/daemon).")
+    _add_logging_args(parser)
     parser.add_argument(
         "--connect",
         dest="global_connect",
@@ -27,6 +34,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     scan_p = sub.add_parser("scan", help="Scan ECUs")
+    _add_logging_args(scan_p)
     _add_can_args(scan_p)
     _add_connect_arg(scan_p)
     _add_discovery_args(scan_p)
@@ -35,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
     dtc_sub = dtc_p.add_subparsers(dest="dtc_cmd", required=True)
 
     dtc_read_p = dtc_sub.add_parser("read", help="Read DTCs")
+    _add_logging_args(dtc_read_p)
     dtc_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 01)")
     dtc_read_p.add_argument(
         "--with-freeze-frame",
@@ -46,33 +55,40 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(dtc_read_p)
 
     dtc_clear_p = dtc_sub.add_parser("clear", help="Clear DTCs")
+    _add_logging_args(dtc_clear_p)
     dtc_clear_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 01)")
     _add_can_args(dtc_clear_p)
     _add_connect_arg(dtc_clear_p)
     _add_can_id_mode_arg(dtc_clear_p)
 
     tui_p = sub.add_parser("tui", help="Run Textual TUI")
+    _add_logging_args(tui_p)
     tui_p.add_argument("--can", default=None, help="SocketCAN interface (in-process mode)")
     _add_connect_arg(tui_p)
     _add_can_id_mode_arg(tui_p)
     tui_p.add_argument("--addressing", choices=["functional", "physical", "both"], default="both")
 
     daemon_p = sub.add_parser("daemon", help="Run Unix socket JSONL daemon")
+    _add_logging_args(daemon_p)
     daemon_p.add_argument("--can", default="vcan0", help="SocketCAN interface (e.g. can0, vcan0)")
     daemon_p.add_argument("--can-id-mode", choices=["11bit", "29bit"], default="11bit")
     daemon_p.add_argument("--sock", default="/tmp/autosvc.sock", help="Unix socket path")
     daemon_p.add_argument("--brand", default=None, help="Optional brand registry (e.g. vag)")
 
     topo_p = sub.add_parser("topo", help="Topology operations")
+    _add_logging_args(topo_p)
     topo_sub = topo_p.add_subparsers(dest="topo_cmd", required=True)
     topo_scan_p = topo_sub.add_parser("scan", help="Scan and report topology")
+    _add_logging_args(topo_scan_p)
     _add_can_args(topo_scan_p)
     _add_connect_arg(topo_scan_p)
     _add_discovery_args(topo_scan_p)
 
     did_p = sub.add_parser("did", help="DID operations (ReadDataByIdentifier)")
+    _add_logging_args(did_p)
     did_sub = did_p.add_subparsers(dest="did_cmd", required=True)
     did_read_p = did_sub.add_parser("read", help="Read a DID")
+    _add_logging_args(did_read_p)
     did_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 01)")
     did_read_p.add_argument("--did", required=True, help="DID as hex (e.g. F190, 1234)")
     _add_can_args(did_read_p)
@@ -80,6 +96,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(did_read_p)
 
     watch_p = sub.add_parser("watch", help="Watch live DIDs and stream events (JSONL)")
+    _add_logging_args(watch_p)
     watch_p.add_argument("--items", required=True, help="Comma-separated list like 01:F190,01:1234")
     watch_p.add_argument("--emit", choices=["changed", "always"], default="changed")
     watch_p.add_argument("--ticks", type=int, default=10)
@@ -89,9 +106,11 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(watch_p)
 
     adapt_p = sub.add_parser("adapt", help="Adaptations (dataset-driven, with backup/revert safety)")
+    _add_logging_args(adapt_p)
     adapt_sub = adapt_p.add_subparsers(dest="adapt_cmd", required=True)
 
     adapt_list_p = adapt_sub.add_parser("list", help="List available adaptation settings for an ECU")
+    _add_logging_args(adapt_list_p)
     adapt_list_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
     adapt_list_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(adapt_list_p)
@@ -99,6 +118,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(adapt_list_p)
 
     adapt_read_p = adapt_sub.add_parser("read", help="Read an adaptation setting")
+    _add_logging_args(adapt_read_p)
     adapt_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
     adapt_read_p.add_argument("--key", required=True, help="Dataset setting key")
     adapt_read_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
@@ -107,6 +127,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(adapt_read_p)
 
     adapt_write_p = adapt_sub.add_parser("write", help="Write an adaptation setting (with backup)")
+    _add_logging_args(adapt_write_p)
     adapt_write_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
     adapt_write_p.add_argument("--key", required=True, help="Dataset setting key")
     adapt_write_p.add_argument("--value", required=True, help="New value (format depends on kind)")
@@ -118,6 +139,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(adapt_write_p)
 
     adapt_raw_p = adapt_sub.add_parser("write-raw", help="Unsafe raw DID write (with backup)")
+    _add_logging_args(adapt_raw_p)
     adapt_raw_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
     adapt_raw_p.add_argument("--did", required=True, help="DID as hex (e.g. 1234)")
     adapt_raw_p.add_argument("--hex", dest="hex_payload", required=True, help="Raw bytes as hex (e.g. 01)")
@@ -129,6 +151,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(adapt_raw_p)
 
     adapt_rev_p = adapt_sub.add_parser("revert", help="Revert a previous write using a backup id")
+    _add_logging_args(adapt_rev_p)
     adapt_rev_p.add_argument("--backup-id", required=True, help="Backup id (e.g. 000001)")
     adapt_rev_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
     adapt_rev_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
@@ -138,12 +161,37 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
 
+    # Logging (stderr/file). Keep command results on stdout.
+    level_name: str | None = getattr(args, "log_level", None)
+    if getattr(args, "trace", False):
+        level = TRACE_LEVEL
+    elif getattr(args, "verbose", False):
+        level = logging.DEBUG
+    else:
+        level = parse_log_level(level_name)
+
+    setup_logging(
+        level=level,
+        log_format=str(getattr(args, "log_format", "pretty") or "pretty"),
+        log_file=getattr(args, "log_file", None),
+        no_color=bool(getattr(args, "no_color", False)),
+    )
+
+    trace_id = uuid.uuid4().hex[:12]
+    with trace_context(trace_id):
+        log.debug("CLI start", extra={"cmd": getattr(args, "cmd", None), "trace_id": trace_id})
+        _dispatch(args)
+
+
+def _dispatch(args: argparse.Namespace) -> None:
     if args.cmd == "daemon":
         from autosvc.apps.daemon import main as daemon_main
 
         daemon_argv = ["--can", args.can, "--can-id-mode", args.can_id_mode, "--sock", args.sock]
-        if args.brand:
+        if getattr(args, "brand", None):
             daemon_argv.extend(["--brand", args.brand])
+        # Forward logging flags when daemon is invoked via the umbrella CLI.
+        daemon_argv.extend(_logging_argv_from_args(args))
         daemon_main(daemon_argv)
         return None
 
@@ -154,12 +202,13 @@ def main(argv: list[str] | None = None) -> None:
         tui_args: list[str] = []
         if connect:
             tui_args.extend(["--connect", connect])
-        if args.can:
+        if getattr(args, "can", None):
             tui_args.extend(["--can", args.can])
-        if args.can_id_mode:
+        if getattr(args, "can_id_mode", None):
             tui_args.extend(["--can-id-mode", args.can_id_mode])
-        if args.addressing:
+        if getattr(args, "addressing", None):
             tui_args.extend(["--addressing", args.addressing])
+        tui_args.extend(_logging_argv_from_args(args))
         tui_main(tui_args)
         return None
 
@@ -361,9 +410,26 @@ def main(argv: list[str] | None = None) -> None:
                 _print_adapt_write(response)
             raise SystemExit(0 if response.get("ok") else 1)
 
-        parser.error("unknown adapt command")
+        raise SystemExit("error: unknown adapt command")
 
-    parser.error("unknown command")
+    raise SystemExit("error: unknown command")
+
+
+def _logging_argv_from_args(args: argparse.Namespace) -> list[str]:
+    out: list[str] = []
+    if getattr(args, "trace", False):
+        out.append("--trace")
+    elif getattr(args, "verbose", False):
+        out.append("--verbose")
+    elif getattr(args, "log_level", None):
+        out.extend(["--log-level", str(args.log_level)])
+    if getattr(args, "log_file", None):
+        out.extend(["--log-file", str(args.log_file)])
+    if getattr(args, "log_format", None):
+        out.extend(["--log-format", str(args.log_format)])
+    if getattr(args, "no_color", False):
+        out.append("--no-color")
+    return out
 
 
 def _add_can_args(parser: argparse.ArgumentParser) -> None:
@@ -384,6 +450,25 @@ def _add_discovery_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--timeout-ms", type=int, default=250)
     parser.add_argument("--retries", type=int, default=1)
     parser.add_argument("--probe-session", action=argparse.BooleanOptionalAction, default=True)
+
+
+def _add_logging_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--log-level",
+        choices=["error", "warning", "info", "debug", "trace"],
+        default=None,
+        help="Logging level (default: info)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Alias for --log-level=debug")
+    parser.add_argument("--trace", action="store_true", help="Alias for --log-level=trace")
+    parser.add_argument("--log-file", default=None, help="Optional log file path")
+    parser.add_argument(
+        "--log-format",
+        choices=["pretty", "json"],
+        default="pretty",
+        help="Log output format (default: pretty)",
+    )
+    parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in pretty logs")
 
 
 def _print_json(payload: dict[str, Any]) -> None:
