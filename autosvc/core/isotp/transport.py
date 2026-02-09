@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from autosvc.core.transport.base import CanFrame, CanTransport
+
+
+log = logging.getLogger(__name__)
 
 
 class IsoTpError(Exception):
@@ -89,10 +93,21 @@ class IsoTpTransport:
         self._timeout_ms = int(value)
 
     def request(self, payload: bytes) -> bytes:
+        if log.isEnabledFor(5):
+            log.trace(
+                "ISO-TP request",
+                extra={"tx_id": f"0x{int(self._tx_id):X}", "rx_id": f"0x{int(self._rx_id):X}", "payload_hex": payload.hex()},
+            )
         if self._legacy:
             return self._legacy_request(payload)
         self._send_payload(payload)
-        return self._recv_payload(self._timeout_ms)
+        resp = self._recv_payload(self._timeout_ms)
+        if log.isEnabledFor(5):
+            log.trace(
+                "ISO-TP response",
+                extra={"tx_id": f"0x{int(self._tx_id):X}", "rx_id": f"0x{int(self._rx_id):X}", "payload_hex": resp.hex()},
+            )
+        return resp
 
     def recv_response(self) -> bytes:
         if self._legacy:
@@ -226,6 +241,11 @@ class IsoTpTransport:
             raise IsoTpProtocolError("CAN frame too large")
         if len(payload) < 8:
             payload = payload + (b"\x00" * (8 - len(payload)))
+        if log.isEnabledFor(5):
+            log.trace(
+                "CAN TX (ISO-TP)",
+                extra={"can_id": f"0x{int(self._tx_id):X}", "data_hex": payload.hex()},
+            )
         self._can.send(self._tx_id, payload)
 
     def _recv_frame(self, can_id: int, timeout_ms: int) -> CanFrame:
@@ -239,5 +259,10 @@ class IsoTpTransport:
                 continue
             if frame.can_id != can_id:
                 continue
+            if log.isEnabledFor(5):
+                log.trace(
+                    "CAN RX (ISO-TP)",
+                    extra={"can_id": f"0x{int(frame.can_id):X}", "data_hex": frame.data.hex()},
+                )
             return frame
         raise IsoTpTimeoutError("timeout waiting for CAN frame")

@@ -48,6 +48,24 @@ Clients provide a `CanTransport` (in-process mode) or delegate to a daemon (IPC 
 This keeps the diagnostic engine reusable and makes it easy to add more clients later
 (for example, an HTTP client) without refactoring the core.
 
+## Logging
+
+`autosvc` uses Python stdlib `logging` with an additional `TRACE` level (numeric level 5).
+
+Guidelines:
+- **INFO**: high-level operations and summaries (scan/read/clear)
+- **DEBUG**: request/response payloads, elapsed time, IPC requests
+- **TRACE**: raw CAN frames and ISO-TP framing (very noisy)
+
+The default configuration is set up by clients (`autosvc.apps.*`) via `autosvc.logging.setup_logging()`.
+The core stays client-agnostic: it only emits logs via module loggers (`logging.getLogger(__name__)`).
+
+To enable trace:
+
+```bash
+uv run autosvc --trace dtc read --ecu 01 --can vcan0
+```
+
 ## Daemon IPC (optional)
 
 - `autosvc.ipc.*`

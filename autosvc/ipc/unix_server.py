@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import time
@@ -9,6 +10,9 @@ from autosvc.core.service import DiagnosticService
 from autosvc.core.live.watch import WatchItem, Watcher
 from autosvc.core.uds.did import parse_did
 from autosvc.ipc.protocol import decode_json_line, encode_json_line, error, handle_request
+
+
+log = logging.getLogger(__name__)
 
 
 class JsonlUnixServer:
@@ -21,9 +25,12 @@ class JsonlUnixServer:
         if self._sock is None:
             self._start()
         assert self._sock is not None
+        log.info("IPC server ready", extra={"sock": self._socket_path})
         while True:
-            conn, _ = self._sock.accept()
+            conn, addr = self._sock.accept()
+            _ = addr
             with conn:
+                log.info("IPC client connected", extra={"sock": self._socket_path})
                 self._handle_client(conn)
 
     def close(self) -> None:
@@ -45,6 +52,7 @@ class JsonlUnixServer:
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._sock.bind(self._socket_path)
         self._sock.listen(8)
+        log.info("IPC server listening", extra={"sock": self._socket_path})
 
     def _handle_client(self, conn: socket.socket) -> None:
         # Use socket timeouts to allow watch streaming without threads.
@@ -125,7 +133,11 @@ class JsonlUnixServer:
         except ValueError as exc:
             return encode_json_line(error(str(exc))), None, 200, None
 
-        if request.get("cmd") == "watch_start":
+        cmd = request.get("cmd")
+        if cmd:
+            log.info("IPC request", extra={"cmd": cmd})
+
+        if cmd == "watch_start":
             try:
                 watcher, tick_ms, max_ticks = self._start_watch(request)
             except Exception as exc:

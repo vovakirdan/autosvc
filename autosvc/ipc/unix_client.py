@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 from typing import Any
+
+
+log = logging.getLogger(__name__)
 
 
 class UnixJsonlClient:
@@ -11,6 +15,8 @@ class UnixJsonlClient:
         self._timeout_s = float(timeout_s)
 
     def request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        cmd = payload.get("cmd")
+        log.debug("IPC request", extra={"cmd": cmd, "sock": self._socket_path})
         data = (json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(self._timeout_s)
@@ -24,5 +30,6 @@ class UnixJsonlClient:
         raw = json.loads(line.decode("utf-8"))
         if not isinstance(raw, dict):
             raise RuntimeError("invalid response")
+        log.debug("IPC response", extra={"cmd": cmd, "ok": raw.get("ok")})
         return raw
 

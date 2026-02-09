@@ -55,6 +55,34 @@ uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 - First diagnostic session: `docs/manual/FIRST_DIAG.md`
 - Adaptations (safe writes): `docs/manual/ADAPTATIONS.md`
 
+## Logging
+
+By default, `autosvc` prints **command results to stdout** and **logs to stderr**.
+This makes it safe to pipe JSON outputs while still seeing diagnostics.
+
+Examples:
+
+```bash
+# High-level info logs (default)
+uv run autosvc scan --can vcan0
+
+# Debug: UDS request/response (payload hex), timings, IPC request flow
+uv run autosvc --log-level debug dtc read --ecu 01 --can vcan0
+# (alias)
+uv run autosvc -v dtc read --ecu 01 --can vcan0
+
+# Trace: raw CAN frames + ISO-TP frames (very noisy)
+uv run autosvc --trace dtc read --ecu 01 --can vcan0
+
+# JSON logs to a file, while stdout stays machine-readable
+uv run autosvc --log-format json --log-file /tmp/autosvc.jsonl dtc read --ecu 01 --can vcan0 > /tmp/result.json
+```
+
+Log levels:
+- `info`: high-level steps and summaries (default)
+- `debug`: request/response payloads and timings
+- `trace`: CAN + ISO-TP frame-level logging
+
 ## Run The TUI (Textual)
 
 In-process mode:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.uds.did import parse_did
 from autosvc.core.vehicle.discovery import DiscoveryConfig
+
+
+log = logging.getLogger(__name__)
 
 
 def decode_json_line(line: bytes) -> dict[str, Any]:
@@ -37,6 +41,8 @@ def handle_request(request: dict[str, Any], service: DiagnosticService) -> dict[
     cmd = request.get("cmd")
     if not cmd:
         return error("missing cmd")
+
+    log.info("IPC cmd", extra={"cmd": cmd})
 
     if cmd == "scan_ecus":
         # Keep the original `ecus` list for compatibility, but include lightweight node metadata.

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from autosvc.core.isotp.transport import IsoTpError, IsoTpTimeoutError, IsoTpTransport
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.dtc import Dtc, decode_dtc, status_from_byte
+
+
+log = logging.getLogger(__name__)
 
 
 class UdsError(Exception):
@@ -113,16 +117,55 @@ class UdsClient:
         payload = bytes([sid]) + data
         req_id, resp_id = self._ecu_ids(ecu)
         isotp = IsoTpTransport(self._transport, req_id, resp_id, timeout_ms=self._p2_ms)
+
+        # Avoid logging secrets (e.g. SecurityAccess keys).
+        if (int(sid) & 0xFF) == 0x27 and len(payload) > 2:
+            payload_hex = payload[:2].hex() + f"..(redacted,len={len(payload)})"
+        else:
+            payload_hex = payload.hex()
+
+        log.debug(
+            "UDS request",
+            extra={
+                "ecu": ecu,
+                "sid": f"0x{int(sid) & 0xFF:02X}",
+                "req_id": f"0x{int(req_id):X}",
+                "resp_id": f"0x{int(resp_id):X}",
+                "payload_hex": payload_hex,
+            },
+        )
+
+        started = time.monotonic()
         try:
             response = isotp.request(payload)
         except IsoTpTimeoutError as exc:
             raise UdsError("timeout waiting for response") from exc
         except IsoTpError as exc:
             raise UdsError(str(exc)) from exc
+        finally:
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            log.debug(
+                "UDS request done",
+                extra={
+                    "ecu": ecu,
+                    "sid": f"0x{int(sid) & 0xFF:02X}",
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+
         if not response:
             raise UdsError("empty response")
         if self._is_response_pending(response, sid):
             response = self._wait_for_pending(isotp, sid)
+
+        log.debug(
+            "UDS response",
+            extra={
+                "ecu": ecu,
+                "sid": f"0x{int(sid) & 0xFF:02X}",
+                "resp_hex": response.hex(),
+            },
+        )
         return response
 
     def _wait_for_pending(self, isotp: IsoTpTransport, sid: int) -> bytes:

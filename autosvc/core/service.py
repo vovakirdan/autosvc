@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from autosvc.core.dtc.decode import decode_dtcs
 from autosvc.core.dtc.registry import get_modules
 from autosvc.core.transport.base import CanTransport
@@ -10,6 +12,9 @@ from autosvc.core.uds.freeze_frame import FreezeFrameError, list_snapshot_identi
 from autosvc.core.vehicle.discovery import DiscoveryConfig
 from autosvc.core.vehicle.discovery import scan_topology as _scan_topology
 from autosvc.core.vehicle.topology import Topology
+
+
+log = logging.getLogger(__name__)
 
 
 class DiagnosticService:
@@ -31,17 +36,41 @@ class DiagnosticService:
         self._adaptations: AdaptationsManager | None = None
 
     def scan_ecus(self) -> list[str]:
+        log.info(
+            "Scanning ECUs",
+            extra={"can_interface": self._can_interface, "can_id_mode": self._can_id_mode, "brand": self._brand},
+        )
         topo = self.scan_topology(DiscoveryConfig(can_id_mode=self._can_id_mode))
         return [node.ecu for node in topo.nodes]
 
     def scan_topology(self, config: DiscoveryConfig) -> Topology:
+        log.info(
+            "Scanning topology",
+            extra={
+                "can_interface": self._can_interface,
+                "can_id_mode": config.can_id_mode,
+                "addressing": config.addressing,
+                "timeout_ms": config.timeout_ms,
+                "retries": config.retries,
+            },
+        )
         topo = _scan_topology(self._transport, config, can_interface=self._can_interface)
         for node in topo.nodes:
             node.ecu_name = _resolve_ecu_name(node.ecu, self._brand)
+        log.info("Topology scan complete", extra={"ecu_count": len(topo.nodes)})
         return topo
 
     def read_dtcs(self, ecu: str, *, with_freeze_frame: bool = False) -> list[dict[str, object]]:
         ecu_id = _normalize_ecu(ecu)
+        log.info(
+            "Read DTCs",
+            extra={
+                "ecu": ecu_id,
+                "can_interface": self._can_interface,
+                "can_id_mode": self._can_id_mode,
+                "with_freeze_frame": bool(with_freeze_frame),
+            },
+        )
         dtcs = self._uds.read_dtcs(ecu_id)
         raw_dtcs = [dtc.raw_tuple() for dtc in dtcs]
         decoded = decode_dtcs(raw_dtcs, self._brand)
@@ -51,11 +80,14 @@ class DiagnosticService:
             item["ecu_name"] = ecu_name
         if with_freeze_frame:
             self._attach_freeze_frames(ecu_id, decoded)
+        log.info("Read DTCs complete", extra={"ecu": ecu_id, "dtc_count": len(decoded)})
         return decoded
 
     def clear_dtcs(self, ecu: str) -> None:
         ecu_id = _normalize_ecu(ecu)
+        log.info("Clear DTCs", extra={"ecu": ecu_id, "can_interface": self._can_interface})
         self._uds.clear_dtcs(ecu_id)
+        log.info("Clear DTCs complete", extra={"ecu": ecu_id})
 
     def read_did(self, ecu: str, did: int) -> dict[str, object]:
         ecu_id = _normalize_ecu(ecu)
