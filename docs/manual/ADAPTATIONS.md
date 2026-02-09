@@ -14,32 +14,63 @@ Examples (varies by ECU and model):
 
 Adaptations are not diagnostics. They are ECU configuration writes, and you should treat them as potentially risky.
 
-## Safety Model (Safe, Advanced, Unsafe)
+## Safety Model (safe, advanced, unsafe)
 
-`autosvc` supports three modes for write operations:
+`autosvc` supports three modes:
 
-- `safe`: only allow dataset settings marked `risk="safe"`
-- `advanced`: allow `risk="safe"` and `risk="risky"`
-- `unsafe`: allow raw writes by DID and raw bytes (still performs backup-before-write)
+- `safe`: **read-only** (no writes)
+- `advanced`: allowlisted dataset-driven writes only (`risk="safe"` and `risk="risky"`)
+- `unsafe`: unrestricted raw writes, but **password-gated**
 
 Notes:
 
 - Mode only controls what the tool will allow you to attempt. It does not make the ECU accept a write.
-- Some DIDs require UDS SecurityAccess (`0x27`). `autosvc` has a scaffold for `0x27` but does not implement seed/key algorithms yet.
+- Some DIDs require UDS SecurityAccess (`0x27`). `autosvc` does not implement seed/key algorithms yet.
   - If an ECU requires security, writes will fail with a clear error.
+
+### Advanced mode confirmation
+
+In `advanced` mode, the CLI requires an interactive confirmation token.
+
+- You must type `APPLY` when prompted.
+- Add `--yes` to skip the prompt.
+
+### Unsafe mode password gating
+
+Unsafe operations require a password **every time**.
+
+1) Configure the password:
+
+```bash
+uv run autosvc unsafe set-password
+```
+
+2) Use unsafe mode (you will be prompted):
+
+```bash
+uv run autosvc adapt write-raw --ecu 09 --did 1234 --hex 01 --mode unsafe --can can0
+```
+
+If you need non-interactive usage, provide the password via stdin:
+
+```bash
+echo -n 'YOUR_PASSWORD' | uv run autosvc adapt write-raw --ecu 09 --did 1234 --hex 01 --mode unsafe --unsafe-password-stdin --can can0
+```
+
+`autosvc` never logs the password.
 
 ## Dataset Packs (Offline, Local)
 
 Adaptations are dataset-driven. A dataset pack is a local folder with profiles describing settings for an ECU.
 
-Default lookup:
-
-- `./datasets/` (repo root, when running from source), or
-- `AUTOSVC_DATASETS_DIR=/path/to/datasets`
-
 Brand selection:
 
-- `AUTOSVC_BRAND=vag` selects `datasets/vag/`
+- `AUTOSVC_BRAND=vag` selects the VAG dataset pack.
+
+Datasets root lookup:
+
+- `AUTOSVC_DATA_DIR=/path/to/datasets` (recommended), or
+- `AUTOSVC_DATASETS_DIR=/path/to/datasets` (back-compat)
 
 Minimal structure:
 
@@ -53,19 +84,43 @@ datasets/
 
 The loader is strict. If a profile is invalid, `autosvc` will return an error pointing at the file and key.
 
-## Backups And Revert (Must-Use)
+## Backups (Global Index + Per-backup Files)
 
 Before any write, `autosvc` reads the current raw DID bytes and stores a backup record.
 
 Default backup location:
 
-- `~/.local/share/autosvc/backups/` (Linux)
+- `~/.cache/autosvc/backups/`
+  - `index.jsonl` (append-only index)
+  - `<backup_id>.json` (per-backup record)
 
-Override location (useful for testing):
+Overrides:
 
-- `AUTOSVC_BACKUP_DIR=/tmp/autosvc-backups`
+- `AUTOSVC_BACKUPS_DIR=/path`
+- `AUTOSVC_BACKUP_DIR=/path` (back-compat)
 
-Backups are sequentially numbered (`000001`, `000002`, ...) and contain no timestamps. This keeps regression tests deterministic.
+When `--log-dir DIR` is used, any backup created during that run is also copied into the run bundle:
+
+- `DIR/backups/index.jsonl`
+- `DIR/backups/<backup_id>.json`
+
+Backups are sequentially numbered (`000001`, `000002`, ...) and contain no wall-clock timestamps (keeps tests deterministic).
+
+## Manual backups (snapshots)
+
+You can create manual snapshots without writing anything:
+
+Backup a DID directly:
+
+```bash
+uv run autosvc backup did --ecu 09 --did F190 --can can0
+```
+
+Backup an adaptation key (uses the dataset to resolve DID):
+
+```bash
+uv run autosvc adapt backup --ecu 09 --key comfort_close_windows_remote --can can0
+```
 
 ## CLI Usage
 
@@ -90,10 +145,8 @@ uv run autosvc adapt read --ecu 09 --key comfort_close_windows_remote --can can0
 Write a setting (dataset-driven, with backup):
 
 ```bash
-uv run autosvc adapt write --ecu 09 --key comfort_close_windows_remote --value true --mode safe --can can0
+uv run autosvc adapt write --ecu 09 --key comfort_close_windows_remote --value true --mode advanced --can can0
 ```
-
-In `advanced` / `unsafe` mode, the CLI will require confirmation unless you pass `--yes`.
 
 Revert using a backup id:
 
@@ -101,32 +154,15 @@ Revert using a backup id:
 uv run autosvc adapt revert --backup-id 000001 --can can0
 ```
 
-Raw write (unsafe, requires explicit intent):
+Raw write (unsafe, password-gated):
 
 ```bash
 uv run autosvc adapt write-raw --ecu 09 --did 1234 --hex 01 --mode unsafe --can can0
 ```
 
-## TUI Usage
-
-In-process only:
-
-```bash
-export AUTOSVC_BRAND=vag
-uv run autosvc tui --can can0
-```
-
-Workflow:
-
-1. Scan and select an ECU
-2. Open `Adapt`
-3. Select a setting to read current value
-4. Enter a new value and apply (confirm dialog)
-5. Revert using the last backup id (session-scoped)
-
 ## Emulator Notes
 
-The Debian emulator provides a deterministic adaptation demo for ECU `09`:
+The emulator provides a deterministic adaptation demo for ECU `09`:
 
 - DID `0x1234` (bool) is writable
 - DID `0x1237` (u16) is writable

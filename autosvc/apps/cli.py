@@ -8,7 +8,11 @@ import sys
 import uuid
 from typing import Any
 
+import os
+
+from autosvc.config import ensure_dirs, load_dirs
 from autosvc.runlog import TeeTextIO, create_run_log_dir
+from autosvc.unsafe import prompt_password
 
 from autosvc.core.service import DiagnosticService
 from autosvc.core.live.watch import WatchItem, Watcher
@@ -26,6 +30,7 @@ log = logging.getLogger(__name__)
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="autosvc", description="Automotive service diagnostics (CLI/TUI/daemon).")
     _add_logging_args(parser)
+    _add_dir_args(parser)
     parser.add_argument(
         "--connect",
         dest="global_connect",
@@ -107,9 +112,42 @@ def main(argv: list[str] | None = None) -> None:
     _add_connect_arg(watch_p)
     _add_can_id_mode_arg(watch_p)
 
+    backup_p = sub.add_parser("backup", help="Manual backups (DID snapshots)")
+    _add_logging_args(backup_p)
+    backup_sub = backup_p.add_subparsers(dest="backup_cmd", required=True)
+
+    backup_did_p = backup_sub.add_parser("did", help="Backup a DID value (snapshot)")
+    _add_logging_args(backup_did_p)
+    backup_did_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    backup_did_p.add_argument("--did", required=True, help="DID as hex (e.g. F190, 1234)")
+    backup_did_p.add_argument("--notes", default=None, help="Optional notes")
+    backup_did_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(backup_did_p)
+    _add_connect_arg(backup_did_p)
+    _add_can_id_mode_arg(backup_did_p)
+
+    unsafe_p = sub.add_parser("unsafe", help="Unsafe mode password management")
+    _add_logging_args(unsafe_p)
+    unsafe_sub = unsafe_p.add_subparsers(dest="unsafe_cmd", required=True)
+    unsafe_set_p = unsafe_sub.add_parser("set-password", help="Set/replace the unsafe mode password")
+    _add_logging_args(unsafe_set_p)
+
+    unsafe_status_p = unsafe_sub.add_parser("status", help="Show whether the unsafe password is configured")
+    _add_logging_args(unsafe_status_p)
+
     adapt_p = sub.add_parser("adapt", help="Adaptations (dataset-driven, with backup/revert safety)")
     _add_logging_args(adapt_p)
     adapt_sub = adapt_p.add_subparsers(dest="adapt_cmd", required=True)
+
+    adapt_backup_p = adapt_sub.add_parser("backup", help="Create a manual backup snapshot for an adaptation key")
+    _add_logging_args(adapt_backup_p)
+    adapt_backup_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    adapt_backup_p.add_argument("--key", required=True, help="Dataset setting key")
+    adapt_backup_p.add_argument("--notes", default=None, help="Optional notes")
+    adapt_backup_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(adapt_backup_p)
+    _add_connect_arg(adapt_backup_p)
+    _add_can_id_mode_arg(adapt_backup_p)
 
     adapt_list_p = adapt_sub.add_parser("list", help="List available adaptation settings for an ECU")
     _add_logging_args(adapt_list_p)
@@ -135,6 +173,11 @@ def main(argv: list[str] | None = None) -> None:
     adapt_write_p.add_argument("--value", required=True, help="New value (format depends on kind)")
     adapt_write_p.add_argument("--mode", choices=["safe", "advanced", "unsafe"], default="safe")
     adapt_write_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    adapt_write_p.add_argument(
+        "--unsafe-password-stdin",
+        action="store_true",
+        help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
     adapt_write_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(adapt_write_p)
     _add_connect_arg(adapt_write_p)
@@ -147,6 +190,11 @@ def main(argv: list[str] | None = None) -> None:
     adapt_raw_p.add_argument("--hex", dest="hex_payload", required=True, help="Raw bytes as hex (e.g. 01)")
     adapt_raw_p.add_argument("--mode", choices=["unsafe"], default="unsafe")
     adapt_raw_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    adapt_raw_p.add_argument(
+        "--unsafe-password-stdin",
+        action="store_true",
+        help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
     adapt_raw_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(adapt_raw_p)
     _add_connect_arg(adapt_raw_p)
@@ -162,6 +210,11 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_id_mode_arg(adapt_rev_p)
 
     args = parser.parse_args(argv)
+
+    _apply_dir_overrides(args)
+
+    # Ensure base dirs exist early (for unsafe password and backup store).
+    ensure_dirs(load_dirs())
 
     # Logging (stderr/file). Keep command results on stdout.
     level_name: str | None = getattr(args, "log_level", None)
@@ -232,6 +285,36 @@ def _dispatch(args: argparse.Namespace) -> None:
         tui_args.extend(_logging_argv_from_args(args))
         tui_main(tui_args)
         return None
+
+    if args.cmd == "unsafe" and args.unsafe_cmd == "set-password":
+        from autosvc.unsafe import set_password_interactive
+
+        set_password_interactive()
+        _print_json({"ok": True})
+        raise SystemExit(0)
+
+    if args.cmd == "unsafe" and args.unsafe_cmd == "status":
+        from autosvc.unsafe import is_password_configured
+
+        _print_json({"ok": True, "configured": bool(is_password_configured())})
+        raise SystemExit(0)
+
+    if args.cmd == "backup" and args.backup_cmd == "did":
+        connect = getattr(args, "connect", None) or args.global_connect
+        if connect:
+            _print_json({"ok": False, "error": "backup is not available in daemon mode"})
+            raise SystemExit(1)
+        response = _run_inprocess(
+            args.can,
+            can_id_mode=args.can_id_mode,
+            op="backup_did",
+            ecu=args.ecu,
+            did=args.did,
+            notes=args.notes,
+            log_dir=getattr(args, "log_dir", None),
+        )
+        _print_json(response)
+        raise SystemExit(0 if response.get("ok") else 1)
 
     if args.cmd == "scan":
         connect = getattr(args, "connect", None) or args.global_connect
@@ -374,11 +457,21 @@ def _dispatch(args: argparse.Namespace) -> None:
             raise SystemExit(0 if response.get("ok") else 1)
 
         if args.adapt_cmd == "write":
-            if args.mode in {"advanced", "unsafe"}:
-                confirm_or_raise(
-                    f"About to write adaptation ECU={args.ecu} key={args.key} value={args.value} mode={args.mode}.",
-                    assume_yes=bool(args.yes),
-                )
+            if args.mode == "safe":
+                _print_json({"ok": False, "error": "safe mode is read-only (use --mode advanced or --mode unsafe)"})
+                raise SystemExit(1)
+
+            unsafe_password = None
+            if args.mode == "unsafe":
+                unsafe_password = _get_unsafe_password(args)
+
+            # advanced/unsafe require explicit confirmation token
+            confirm_or_raise(
+                f"About to write adaptation ECU={args.ecu} key={args.key} value={args.value} mode={args.mode}.",
+                assume_yes=bool(args.yes),
+                token="APPLY",
+            )
+
             response = _run_inprocess(
                 args.can,
                 can_id_mode=args.can_id_mode,
@@ -387,6 +480,8 @@ def _dispatch(args: argparse.Namespace) -> None:
                 key=args.key,
                 value=args.value,
                 mode=args.mode,
+                unsafe_password=unsafe_password,
+                log_dir=getattr(args, "log_dir", None),
             )
             if args.json:
                 _print_json(response)
@@ -395,9 +490,11 @@ def _dispatch(args: argparse.Namespace) -> None:
             raise SystemExit(0 if response.get("ok") else 1)
 
         if args.adapt_cmd == "write-raw":
+            unsafe_password = _get_unsafe_password(args)
             confirm_or_raise(
                 f"About to perform raw DID write ECU={args.ecu} DID={args.did} HEX={args.hex_payload}.",
                 assume_yes=bool(args.yes),
+                token="APPLY",
             )
             response = _run_inprocess(
                 args.can,
@@ -407,6 +504,8 @@ def _dispatch(args: argparse.Namespace) -> None:
                 did=args.did,
                 hex_payload=args.hex_payload,
                 mode=args.mode,
+                unsafe_password=unsafe_password,
+                log_dir=getattr(args, "log_dir", None),
             )
             if args.json:
                 _print_json(response)
@@ -418,6 +517,7 @@ def _dispatch(args: argparse.Namespace) -> None:
             confirm_or_raise(
                 f"About to revert adaptation backup_id={args.backup_id}.",
                 assume_yes=bool(args.yes),
+                token="APPLY",
             )
             response = _run_inprocess(
                 args.can,
@@ -431,9 +531,45 @@ def _dispatch(args: argparse.Namespace) -> None:
                 _print_adapt_write(response)
             raise SystemExit(0 if response.get("ok") else 1)
 
+        if args.adapt_cmd == "backup":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="adapt_backup",
+                ecu=args.ecu,
+                key=args.key,
+                notes=args.notes,
+                log_dir=getattr(args, "log_dir", None),
+            )
+            _print_json(response) if args.json else _print_json(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
         raise SystemExit("error: unknown adapt command")
 
     raise SystemExit("error: unknown command")
+
+
+def _apply_dir_overrides(args: argparse.Namespace) -> None:
+    # Apply as env vars so core stays CLI-agnostic.
+    if getattr(args, "config_dir", None):
+        os.environ["AUTOSVC_CONFIG_DIR"] = str(args.config_dir)
+    if getattr(args, "cache_dir", None):
+        os.environ["AUTOSVC_CACHE_DIR"] = str(args.cache_dir)
+    if getattr(args, "data_dir", None):
+        os.environ["AUTOSVC_DATA_DIR"] = str(args.data_dir)
+    if getattr(args, "backups_dir", None):
+        os.environ["AUTOSVC_BACKUPS_DIR"] = str(args.backups_dir)
+
+
+def _get_unsafe_password(args: argparse.Namespace) -> str:
+    if getattr(args, "unsafe_password_stdin", False):
+        pw = (sys.stdin.readline() or "").rstrip("\n")
+        if not pw:
+            raise SystemExit("error: unsafe password is required on stdin")
+        return pw
+    from autosvc.unsafe import prompt_password
+
+    return prompt_password()
 
 
 def _logging_argv_from_args(args: argparse.Namespace) -> list[str]:
@@ -517,6 +653,21 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_dir_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--config-dir", default=None, help="Override config dir (default: ~/.config/autosvc)")
+    parser.add_argument("--cache-dir", default=None, help="Override cache dir (default: ~/.cache/autosvc)")
+    parser.add_argument(
+        "--data-dir",
+        default=None,
+        help="Override datasets dir (default: package datasets).",
+    )
+    parser.add_argument(
+        "--backups-dir",
+        default=None,
+        help="Override backups dir (default: <cache>/backups).",
+    )
+
+
 def _print_json(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, sort_keys=True, indent=2) + "\n")
 
@@ -546,11 +697,22 @@ def _run_inprocess(
     timeout_ms: int = 250,
     retries: int = 1,
     probe_session: bool = True,
+    unsafe_password: str | None = None,
+    notes: str | None = None,
+    log_dir: str | None = None,
 ) -> dict[str, Any]:
     transport: SocketCanTransport | None = None
     try:
         transport = SocketCanTransport(channel=can_if, is_extended_id=(can_id_mode == "29bit"))
-        service = DiagnosticService(transport, can_interface=can_if, can_id_mode=can_id_mode)
+        # Resolve datasets_dir from env override (set by --data-dir), keep core CLI-agnostic.
+        datasets_dir = os.getenv("AUTOSVC_DATA_DIR")
+        service = DiagnosticService(
+            transport,
+            can_interface=can_if,
+            can_id_mode=can_id_mode,
+            datasets_dir=datasets_dir,
+            log_dir=log_dir,
+        )
         if op == "scan":
             topo = service.scan_topology(
                 DiscoveryConfig(
@@ -598,14 +760,35 @@ def _run_inprocess(
             assert key is not None
             assert value is not None
             assert mode is not None
-            return {"ok": True, "result": service.write_adaptation(ecu, key, value, mode=mode)}
+            return {
+                "ok": True,
+                "result": service.write_adaptation(ecu, key, value, mode=mode, unsafe_password=unsafe_password),
+            }
         if op == "adapt_write_raw":
             assert ecu is not None
             assert did is not None
             assert hex_payload is not None
             assert mode is not None
             did_int = parse_did(did)
-            return {"ok": True, "result": service.write_adaptation_raw(ecu, did_int, hex_payload, mode=mode)}
+            return {
+                "ok": True,
+                "result": service.write_adaptation_raw(
+                    ecu,
+                    did_int,
+                    hex_payload,
+                    mode=mode,
+                    unsafe_password=unsafe_password,
+                ),
+            }
+        if op == "adapt_backup":
+            assert ecu is not None
+            assert key is not None
+            return {"ok": True, "result": service.backup_adaptation(ecu, key, notes=notes)}
+        if op == "backup_did":
+            assert ecu is not None
+            assert did is not None
+            did_int = parse_did(did)
+            return {"ok": True, "result": service.backup_did(ecu, did_int, notes=notes)}
         if op == "adapt_revert":
             assert backup_id is not None
             return {"ok": True, "result": service.revert_adaptation(backup_id)}

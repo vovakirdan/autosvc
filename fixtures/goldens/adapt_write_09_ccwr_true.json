@@ -8,7 +8,7 @@
     "key": "comfort_close_windows_remote",
     "kind": "bool",
     "label": "Comfort closing via remote",
-    "mode": "safe",
+    "mode": "advanced",
     "new": {
       "raw": "01",
       "value": true
@@ -20,4 +20,3 @@
     "risk": "safe"
   }
 }
-

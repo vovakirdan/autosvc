@@ -3,11 +3,22 @@
   "ok": true,
   "settings": [
     {
+      "did": "1241",
+      "ecu": "09",
+      "key": "auto_lock_speed_kmh",
+      "kind": "u8",
+      "label": "Auto-lock speed (km/h)",
+      "needs_security_access": false,
+      "notes": "Example risky setting; check local regulations",
+      "risk": "risky"
+    },
+    {
       "did": "1234",
       "ecu": "09",
       "key": "comfort_close_windows_remote",
       "kind": "bool",
       "label": "Comfort closing via remote",
+      "needs_security_access": false,
       "notes": "If supported by BCM/door modules",
       "risk": "safe"
     },
@@ -16,7 +27,38 @@
       "ecu": "09",
       "key": "coming_home_time_s",
       "kind": "u16",
-      "label": "Coming-home timer",
+      "label": "Coming-home timer (s)",
+      "needs_security_access": false,
+      "notes": "Emulator/demo value",
+      "risk": "safe"
+    },
+    {
+      "did": "1240",
+      "ecu": "09",
+      "key": "drl_mode",
+      "kind": "enum",
+      "label": "Daytime running lights (mode)",
+      "needs_security_access": false,
+      "notes": "Example enum; semantics depend on vehicle",
+      "risk": "risky"
+    },
+    {
+      "did": "1239",
+      "ecu": "09",
+      "key": "lane_change_blink_count",
+      "kind": "u8",
+      "label": "Lane-change blink count",
+      "needs_security_access": false,
+      "notes": "Typical values: 3-5 (emulator/demo DID)",
+      "risk": "safe"
+    },
+    {
+      "did": "1238",
+      "ecu": "09",
+      "key": "leaving_home_time_s",
+      "kind": "u16",
+      "label": "Leaving-home timer (s)",
+      "needs_security_access": false,
       "notes": "Emulator/demo value",
       "risk": "safe"
     },
@@ -26,8 +68,19 @@
       "key": "security_demo_protected",
       "kind": "u8",
       "label": "Security protected demo setting",
+      "needs_security_access": true,
       "notes": "Write should fail with security required in the emulator",
       "risk": "safe"
+    },
+    {
+      "did": "6666",
+      "ecu": "09",
+      "key": "unsafe_demo_bytes",
+      "kind": "bytes",
+      "label": "UNSAFE demo bytes",
+      "needs_security_access": false,
+      "notes": "Example unsafe adaptation requiring --mode unsafe",
+      "risk": "unsafe"
     }
   ]
 }

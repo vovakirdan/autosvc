@@ -58,11 +58,24 @@ def load_adaptations_profile(*, brand: str | None = None, datasets_dir: str | Pa
 def _datasets_root(datasets_dir: str | Path | None) -> Path:
     if datasets_dir is not None:
         return Path(datasets_dir).expanduser()
-    env = (os.getenv("AUTOSVC_DATASETS_DIR", "") or "").strip()
+    env = (os.getenv("AUTOSVC_DATA_DIR", "") or "").strip()
+    if not env:
+        # Back-compat.
+        env = (os.getenv("AUTOSVC_DATASETS_DIR", "") or "").strip()
     if env:
         return Path(env).expanduser()
 
-    # Default: try CWD datasets/, then repo-root datasets/ (when running from source).
+    # Default: prefer packaged datasets, then CWD datasets/, then repo-root datasets/.
+    try:
+        import importlib.resources
+
+        base = importlib.resources.files("autosvc.data")
+        packaged = Path(str(base.joinpath("datasets")))
+        if packaged.exists():
+            return packaged
+    except Exception:
+        pass
+
     cwd = Path.cwd() / "datasets"
     if cwd.exists():
         return cwd
@@ -97,7 +110,7 @@ def _load_adapt_profile_file(path: Path) -> AdaptationsProfile:
 
 def _parse_setting(path: Path, idx: int, obj: dict[str, Any]) -> AdaptSettingSpec:
     required = {"key", "label", "kind", "read", "write", "risk", "notes"}
-    optional = {"enum"}
+    optional = {"enum", "needs_security_access"}
     _require_keys(path, obj, required=required, optional=optional, prefix=f"settings[{idx}]")
 
     key = _require_str(path, obj, "key", prefix=f"settings[{idx}]").strip()
@@ -117,6 +130,8 @@ def _parse_setting(path: Path, idx: int, obj: dict[str, Any]) -> AdaptSettingSpe
     notes = _require_str(path, obj, "notes", prefix=f"settings[{idx}]")
     read = _parse_rw_ref(path, obj.get("read"), f"settings[{idx}].read")
     write = _parse_rw_ref(path, obj.get("write"), f"settings[{idx}].write")
+
+    needs_sa = bool(obj.get("needs_security_access"))
 
     enum_map = None
     if kind == "enum":
@@ -139,6 +154,7 @@ def _parse_setting(path: Path, idx: int, obj: dict[str, Any]) -> AdaptSettingSpe
         write=write,
         risk=risk,
         notes=notes,
+        needs_security_access=needs_sa,
         enum=enum_map,
     )
 

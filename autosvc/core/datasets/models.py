@@ -31,6 +31,7 @@ class AdaptSettingSpec:
     write: AdaptRwRef
     risk: AdaptRisk
     notes: str = ""
+    needs_security_access: bool = False
     enum: dict[str, str] | None = None
 
 

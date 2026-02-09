@@ -6,6 +6,7 @@
     "key": "comfort_close_windows_remote",
     "kind": "bool",
     "label": "Comfort closing via remote",
+    "needs_security_access": false,
     "notes": "If supported by BCM/door modules",
     "raw": "01",
     "risk": "safe",
@@ -13,4 +14,3 @@
   },
   "ok": true
 }
-

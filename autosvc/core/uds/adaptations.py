@@ -6,7 +6,7 @@ from typing import Any
 
 from autosvc.core.datasets.loader import load_adaptations_profile
 from autosvc.core.datasets.models import AdaptSettingSpec, AdaptationsProfile
-from autosvc.core.safety.backups import BackupStore
+from autosvc.backups import BackupStore
 from autosvc.core.uds.client import UdsClient, UdsError, UdsNegativeResponseError
 from autosvc.core.uds.did import read_did as uds_read_did
 from autosvc.core.uds.security import is_security_nrc
@@ -25,6 +25,7 @@ class AdaptSetting:
     did: int
     risk: str
     notes: str
+    needs_security_access: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class AdaptSetting:
             "kind": self.kind,
             "did": f"{int(self.did) & 0xFFFF:04X}",
             "risk": self.risk,
+            "needs_security_access": bool(self.needs_security_access),
             "notes": self.notes,
         }
 
@@ -46,10 +48,12 @@ class AdaptationsManager:
         brand: str | None = None,
         datasets_dir: str | Path | None = None,
         backups: BackupStore | None = None,
+        log_dir: str | Path | None = None,
     ) -> None:
         self._uds = uds
         self._profiles = load_adaptations_profile(brand=brand, datasets_dir=datasets_dir)
         self._backups = backups or BackupStore()
+        self._log_dir = Path(log_dir).expanduser() if log_dir is not None else None
 
     def list_settings(self, ecu: str) -> list[AdaptSetting]:
         profile = self._profile_for_ecu(ecu)
@@ -58,6 +62,30 @@ class AdaptationsManager:
             out.append(self._setting_from_spec(profile.ecu, spec))
         out.sort(key=lambda s: s.key)
         return out
+
+    def backup_setting(self, ecu: str, key: str, *, notes: str | None = None) -> dict[str, Any]:
+        profile = self._profile_for_ecu(ecu)
+        spec = self._spec_for_key(profile, key)
+        did = int(spec.read.id, 16) & 0xFFFF
+        raw = self._read_did(profile.ecu, did)
+        rec = self._backups.create_snapshot_backup(
+            ecu=profile.ecu,
+            did=did,
+            key=spec.key,
+            raw=raw,
+            notes=notes or spec.label,
+            copy_to_log_dir=self._log_dir,
+        )
+        return {
+            "backup_id": rec.backup_id,
+            "ecu": profile.ecu,
+            "ecu_name": profile.ecu_name,
+            "key": spec.key,
+            "label": spec.label,
+            "did": f"{did:04X}",
+            "raw": raw.hex().upper(),
+            "value": _decode_value(spec, raw),
+        }
 
     def read_setting(self, ecu: str, key: str) -> dict[str, Any]:
         profile = self._profile_for_ecu(ecu)
@@ -73,6 +101,7 @@ class AdaptationsManager:
             "kind": spec.kind,
             "did": f"{did:04X}",
             "risk": spec.risk,
+            "needs_security_access": bool(getattr(spec, "needs_security_access", False)),
             "notes": spec.notes,
             "raw": raw.hex().upper(),
             "value": value,
@@ -89,13 +118,14 @@ class AdaptationsManager:
 
         old_raw = self._read_did(profile.ecu, did)
         new_raw = _encode_value(spec, value)
-        backup = self._backups.create_backup(
+        backup = self._backups.create_write_backup(
             ecu=profile.ecu,
             did=did,
             key=spec.key,
             old=old_raw,
             new=new_raw,
             notes=spec.label,
+            copy_to_log_dir=self._log_dir,
         )
 
         self._write_did(profile.ecu, did, new_raw)
@@ -122,7 +152,15 @@ class AdaptationsManager:
         did_int = int(did) & 0xFFFF
         new_raw = _parse_hex(hex_payload)
         old_raw = self._read_did(ecu_id, did_int)
-        backup = self._backups.create_backup(ecu=ecu_id, did=did_int, key=None, old=old_raw, new=new_raw, notes="raw")
+        backup = self._backups.create_write_backup(
+            ecu=ecu_id,
+            did=did_int,
+            key=None,
+            old=old_raw,
+            new=new_raw,
+            notes="raw",
+            copy_to_log_dir=self._log_dir,
+        )
         self._write_did(ecu_id, did_int, new_raw)
         readback = self._read_did(ecu_id, did_int)
         return {
@@ -137,6 +175,8 @@ class AdaptationsManager:
 
     def revert(self, backup_id: str) -> dict[str, Any]:
         record = self._backups.load(backup_id)
+        if record.kind != "did_write" or not record.old_hex:
+            raise AdaptationsError("backup is not a write backup")
         old = _parse_hex(record.old_hex)
         self._write_did(record.ecu, record.did, old)
         readback = self._read_did(record.ecu, record.did)
@@ -174,6 +214,7 @@ class AdaptationsManager:
             did=did,
             risk=str(spec.risk),
             notes=spec.notes,
+            needs_security_access=bool(getattr(spec, "needs_security_access", False)),
         )
 
     def _read_did(self, ecu: str, did: int) -> bytes:
@@ -202,8 +243,12 @@ def _enforce_mode(mode: str, risk: str, *, dataset_key: str) -> None:
     r = (risk or "").strip().lower()
     if m not in {"safe", "advanced", "unsafe"}:
         raise AdaptationsError("invalid mode")
-    if m == "safe" and r != "safe":
-        raise AdaptationsError(f"setting '{dataset_key}' is not allowed in safe mode")
+
+    # Phase 4.1: safe mode is strictly read-only.
+    if m == "safe":
+        raise AdaptationsError("safe mode is read-only (use --mode advanced or --mode unsafe)")
+
+    # advanced mode is allowlisted by dataset risk.
     if m == "advanced" and r not in {"safe", "risky"}:
         raise AdaptationsError(f"setting '{dataset_key}' is not allowed in advanced mode")
 

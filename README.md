@@ -53,7 +53,22 @@ uv run autosvc watch --items 01:1234 --emit changed --ticks 5 --can vcan0
 
 - Setup: `docs/manual/SETUP.md`
 - First diagnostic session: `docs/manual/FIRST_DIAG.md`
-- Adaptations (safe writes): `docs/manual/ADAPTATIONS.md`
+- Adaptations (dataset-driven writes): `docs/manual/ADAPTATIONS.md`
+
+## Directories / portability
+
+Base directories can be overridden (CLI flags or env):
+
+- `--config-dir` / `AUTOSVC_CONFIG_DIR` (default: `~/.config/autosvc`)
+- `--cache-dir` / `AUTOSVC_CACHE_DIR` (default: `~/.cache/autosvc`)
+- `--data-dir` / `AUTOSVC_DATA_DIR` (datasets root)
+- `--backups-dir` / `AUTOSVC_BACKUPS_DIR` (backup store, default: `<cache>/backups`)
+
+## Adaptations safety UX (Phase 4.1)
+
+- `--mode safe` is **read-only**.
+- `--mode advanced` allows allowlisted dataset writes and requires typing `APPLY` (or add `--yes`).
+- `--mode unsafe` is password-gated (configure via `autosvc unsafe set-password`).
 
 ## Real car troubleshooting / tuning
 
