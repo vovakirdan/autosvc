@@ -224,6 +224,15 @@ run_case "coding_write_09_security_fail" coding write --ecu 09 --key security_de
 
 run_case "adapt_write_09_security_fail" adapt write --ecu 09 --key security_demo_protected --value 1 --mode advanced --yes --can "${CAN_IF}" --json || ok=1
 
+# SecurityAccess (0x27) demo: emulator-only deterministic seed/key.
+run_case "security_seed_09_level01" security seed --ecu 09 --level 01 --can "${CAN_IF}" --json || ok=1
+run_case "security_unlock_09_level01" security unlock --ecu 09 --level 01 --key-hex F6FE3501 --can "${CAN_IF}" --json || ok=1
+
+# Protected writes should succeed after unlocking.
+# Also validates optional pre-unlock integration via --security-* flags.
+run_case "coding_write_09_security_ok" coding write --ecu 09 --key security_demo_protected --value true --mode advanced --yes --security-level 01 --security-key-hex F6FE3501 --can "${CAN_IF}" --json || ok=1
+run_case "adapt_write_09_security_ok" adapt write --ecu 09 --key security_demo_protected --value 1 --mode advanced --yes --security-level 01 --security-key-hex F6FE3501 --can "${CAN_IF}" --json || ok=1
+
 unset AUTOSVC_BRAND
 
 kill "${EMU_PID}" >/dev/null 2>&1 || true

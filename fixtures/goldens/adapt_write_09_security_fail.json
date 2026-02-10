@@ -1,4 +1,4 @@
 {
-  "error": "security access required for DID 1337 (nrc=0x33)",
+  "error": "security access required for DID 1337 (nrc=0x33 (securityAccessDenied))",
   "ok": false
 }

@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "result": {
+    "ecu": "09",
+    "key_len": 4,
+    "key_level": "0x02",
+    "seed_hex": "0901CAFE",
+    "seed_level": "0x01",
+    "used_algo": false
+  }
+}

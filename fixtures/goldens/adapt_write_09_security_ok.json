@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "result": {
+    "backup_id": "000006",
+    "did": "1337",
+    "ecu": "09",
+    "ecu_name": "Central Electronics",
+    "key": "security_demo_protected",
+    "kind": "u8",
+    "label": "Security protected demo setting",
+    "mode": "advanced",
+    "new": {
+      "raw": "01",
+      "value": 1
+    },
+    "old": {
+      "raw": "00",
+      "value": 0
+    },
+    "risk": "safe"
+  }
+}

@@ -167,6 +167,11 @@ class EcuSimulator:
     dids: dict[int, bytes] | None = None
     protected_write_dids: set[int] | None = None
 
+    # Emulator-only SecurityAccess (0x27) state.
+    security_unlocked: bool = False
+    _last_seed_level: int | None = None
+    _last_seed: bytes | None = None
+
     def ecu(self) -> str:
         return f"{self.ecu_int:02X}"
 
@@ -220,6 +225,37 @@ class EcuSimulator:
                 return bytes([0x7F, sid, 0x31])  # request out of range
             return bytes([0x62, payload[1], payload[2]]) + data
 
+        if sid == 0x27:
+            # SecurityAccess (0x27) emulator support.
+            #
+            # WARNING: Emulator-only behavior. This is NOT an OEM algorithm.
+            # The seed/key mapping is intentionally simple and deterministic.
+            if len(payload) < 2:
+                return bytes([0x7F, sid, 0x13])
+            sub = payload[1] & 0xFF
+
+            # Convention: odd=subfunction requestSeed, even=subfunction sendKey.
+            if (sub % 2) == 1:
+                seed = bytes([self.ecu_int & 0xFF, sub & 0xFF, 0xCA, 0xFE])
+                self._last_seed_level = sub
+                self._last_seed = seed
+                return bytes([0x67, sub]) + seed
+
+            # sendKey
+            if self._last_seed is None or self._last_seed_level is None:
+                return bytes([0x7F, sid, 0x24])  # requestSequenceError
+            expected_level = (self._last_seed_level + 1) & 0xFF
+            if sub != expected_level:
+                return bytes([0x7F, sid, 0x24])
+
+            key = payload[2:]
+            expected_key = bytes([(b ^ 0xFF) & 0xFF for b in self._last_seed])
+            if key != expected_key:
+                return bytes([0x7F, sid, 0x35])  # invalidKey
+
+            self.security_unlocked = True
+            return bytes([0x67, sub])
+
         if sid == 0x2E:
             # WriteDataByIdentifier (DID). Minimal deterministic behavior:
             # - Writes update an in-memory DID store per ECU.
@@ -231,7 +267,7 @@ class EcuSimulator:
             if self.dids is None:
                 self.dids = {}
             protected = self.protected_write_dids or set()
-            if did in protected:
+            if did in protected and not self.security_unlocked:
                 return bytes([0x7F, sid, 0x33])  # securityAccessDenied (simulated)
             self.dids[did] = bytes(data)
             return bytes([0x6E, payload[1], payload[2]])
