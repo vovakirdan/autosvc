@@ -15,6 +15,7 @@ This manual is a practical playbook for using `autosvc` on real vehicles.
 - Fault codes (DTCs): `docs/manual/DTC.md`
 - Live data (DIDs + watch lists): `docs/manual/LIVE_DATA.md`
 - Adaptations (dataset-driven, safe writes): `docs/manual/ADAPTATIONS.md`
+- Long Coding (dataset-driven bitfields): `docs/manual/LONG_CODING.md`
 - Emulator (when you do not have a car): `docs/manual/EMULATOR.md`
 - Limitations / non-goals: `docs/manual/LIMITATIONS.md`
 
@@ -35,6 +36,7 @@ If a feature is incomplete or experimental, say so explicitly in the relevant pa
 - [x] DTC read/clear + decoding: `docs/manual/DTC.md`
 - [x] Live data: ReadDataByIdentifier (`0x22`) + watch lists: `docs/manual/LIVE_DATA.md`
 - [x] Adaptations v1 (dataset-driven, backups + revert): `docs/manual/ADAPTATIONS.md`
+- [x] Long Coding v1 (dataset-driven bitfields, backups + revert): `docs/manual/LONG_CODING.md`
 - [x] Emulator + Debian `vcan` flow: `docs/manual/EMULATOR.md`
 - [x] Troubleshooting playbook: `docs/manual/COMMON_PROBLEMS.md`
 - [x] Limitations and non-goals: `docs/manual/LIMITATIONS.md`
