@@ -1,0 +1,64 @@
+{
+  "ecu": "09",
+  "fields": [
+    {
+      "bit": 0,
+      "byte": 0,
+      "did": "0600",
+      "ecu": "09",
+      "key": "auto_lock",
+      "kind": "bool",
+      "label": "Auto-lock doors while driving",
+      "len": 1,
+      "needs_security_access": false,
+      "notes": "Demo bitfield in emulator long coding DID 0600",
+      "risk": "risky"
+    },
+    {
+      "bit": 1,
+      "byte": 0,
+      "did": "0600",
+      "ecu": "09",
+      "enum": {
+        "0": "off",
+        "1": "on",
+        "2": "auto",
+        "3": "reserved"
+      },
+      "key": "rain_closing_mode",
+      "kind": "enum",
+      "label": "Rain closing mode",
+      "len": 2,
+      "needs_security_access": false,
+      "notes": "Demo enum (2-bit) in emulator long coding DID 0600",
+      "risk": "safe"
+    },
+    {
+      "bit": 0,
+      "byte": 0,
+      "did": "0601",
+      "ecu": "09",
+      "key": "security_demo_protected",
+      "kind": "bool",
+      "label": "Protected demo bit (security required)",
+      "len": 1,
+      "needs_security_access": true,
+      "notes": "Write should fail with security required in the emulator",
+      "risk": "risky"
+    },
+    {
+      "bit": 0,
+      "byte": 1,
+      "did": "0600",
+      "ecu": "09",
+      "key": "unsafe_demo_toggle",
+      "kind": "bool",
+      "label": "Unsafe demo toggle (requires --mode unsafe)",
+      "len": 1,
+      "needs_security_access": false,
+      "notes": "Demo unsafe allowlist: only available in --mode unsafe",
+      "risk": "unsafe"
+    }
+  ],
+  "ok": true
+}

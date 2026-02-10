@@ -1,0 +1,57 @@
+{
+  "ecu": "09",
+  "ecu_name": "Central Electrics (demo)",
+  "did": "0600",
+  "length": 4,
+  "fields": [
+    {
+      "key": "auto_lock",
+      "label": "Auto-lock doors while driving",
+      "kind": "bool",
+      "risk": "risky",
+      "byte": 0,
+      "bit": 0,
+      "len": 1,
+      "notes": "Demo bitfield in emulator long coding DID 0600"
+    },
+    {
+      "key": "rain_closing_mode",
+      "label": "Rain closing mode",
+      "kind": "enum",
+      "risk": "safe",
+      "byte": 0,
+      "bit": 1,
+      "len": 2,
+      "notes": "Demo enum (2-bit) in emulator long coding DID 0600",
+      "enum": {
+        "0": "off",
+        "1": "on",
+        "2": "auto",
+        "3": "reserved"
+      }
+    },
+    {
+      "key": "security_demo_protected",
+      "label": "Protected demo bit (security required)",
+      "kind": "bool",
+      "risk": "risky",
+      "byte": 0,
+      "bit": 0,
+      "len": 1,
+      "notes": "Write should fail with security required in the emulator",
+      "did": "0601",
+      "coding_length": 1,
+      "needs_security_access": true
+    },
+    {
+      "key": "unsafe_demo_toggle",
+      "label": "Unsafe demo toggle (requires --mode unsafe)",
+      "kind": "bool",
+      "risk": "unsafe",
+      "byte": 1,
+      "bit": 0,
+      "len": 1,
+      "notes": "Demo unsafe allowlist: only available in --mode unsafe"
+    }
+  ]
+}

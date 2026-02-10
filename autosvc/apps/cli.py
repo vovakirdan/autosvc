@@ -209,6 +209,80 @@ def main(argv: list[str] | None = None) -> None:
     _add_connect_arg(adapt_rev_p)
     _add_can_id_mode_arg(adapt_rev_p)
 
+    coding_p = sub.add_parser("coding", help="Long coding (dataset-driven bitfields, with backup/revert safety)")
+    _add_logging_args(coding_p)
+    coding_sub = coding_p.add_subparsers(dest="coding_cmd", required=True)
+
+    coding_list_p = coding_sub.add_parser("list", help="List available long coding fields for an ECU")
+    _add_logging_args(coding_list_p)
+    coding_list_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    coding_list_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_list_p)
+    _add_connect_arg(coding_list_p)
+    _add_can_id_mode_arg(coding_list_p)
+
+    coding_read_p = coding_sub.add_parser("read", help="Read a long coding field")
+    _add_logging_args(coding_read_p)
+    coding_read_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    coding_read_p.add_argument("--key", required=True, help="Dataset field key")
+    coding_read_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_read_p)
+    _add_connect_arg(coding_read_p)
+    _add_can_id_mode_arg(coding_read_p)
+
+    coding_backup_p = coding_sub.add_parser("backup", help="Create a manual backup snapshot for a long coding key")
+    _add_logging_args(coding_backup_p)
+    coding_backup_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    coding_backup_p.add_argument("--key", required=True, help="Dataset field key")
+    coding_backup_p.add_argument("--notes", default=None, help="Optional notes")
+    coding_backup_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_backup_p)
+    _add_connect_arg(coding_backup_p)
+    _add_can_id_mode_arg(coding_backup_p)
+
+    coding_write_p = coding_sub.add_parser("write", help="Write a long coding field (with backup)")
+    _add_logging_args(coding_write_p)
+    coding_write_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    coding_write_p.add_argument("--key", required=True, help="Dataset field key")
+    coding_write_p.add_argument("--value", required=True, help="New value")
+    coding_write_p.add_argument("--mode", choices=["safe", "advanced", "unsafe"], default="safe")
+    coding_write_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    coding_write_p.add_argument(
+        "--unsafe-password-stdin",
+        action="store_true",
+        help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
+    coding_write_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_write_p)
+    _add_connect_arg(coding_write_p)
+    _add_can_id_mode_arg(coding_write_p)
+
+    coding_raw_p = coding_sub.add_parser("write-raw", help="Unsafe raw DID write (with backup)")
+    _add_logging_args(coding_raw_p)
+    coding_raw_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    coding_raw_p.add_argument("--did", required=True, help="DID as hex (e.g. 0600)")
+    coding_raw_p.add_argument("--hex", dest="hex_payload", required=True, help="Raw bytes as hex (e.g. 01020304)")
+    coding_raw_p.add_argument("--mode", choices=["unsafe"], default="unsafe")
+    coding_raw_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    coding_raw_p.add_argument(
+        "--unsafe-password-stdin",
+        action="store_true",
+        help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
+    coding_raw_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_raw_p)
+    _add_connect_arg(coding_raw_p)
+    _add_can_id_mode_arg(coding_raw_p)
+
+    coding_rev_p = coding_sub.add_parser("revert", help="Revert a previous long coding write using a backup id")
+    _add_logging_args(coding_rev_p)
+    coding_rev_p.add_argument("--backup-id", required=True, help="Backup id (e.g. 000001)")
+    coding_rev_p.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    coding_rev_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(coding_rev_p)
+    _add_connect_arg(coding_rev_p)
+    _add_can_id_mode_arg(coding_rev_p)
+
     args = parser.parse_args(argv)
 
     _apply_dir_overrides(args)
@@ -546,6 +620,116 @@ def _dispatch(args: argparse.Namespace) -> None:
 
         raise SystemExit("error: unknown adapt command")
 
+
+    if args.cmd == "coding":
+        connect = getattr(args, "connect", None) or args.global_connect
+        if connect:
+            _print_json({"ok": False, "error": "long coding is not available in daemon mode"})
+            raise SystemExit(1)
+
+        if args.coding_cmd == "list":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_list",
+                ecu=args.ecu,
+            )
+            if args.json:
+                _print_json(response)
+            else:
+                _print_coding_list(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.coding_cmd == "read":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_read",
+                ecu=args.ecu,
+                key=args.key,
+            )
+            _print_json(response) if args.json else _print_coding_read(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.coding_cmd == "backup":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_backup",
+                ecu=args.ecu,
+                key=args.key,
+                notes=args.notes,
+                log_dir=getattr(args, "log_dir", None),
+            )
+            _print_json(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.coding_cmd == "write":
+            if args.mode == "safe":
+                _print_json({"ok": False, "error": "safe mode is read-only (use --mode advanced or --mode unsafe)"})
+                raise SystemExit(1)
+
+            unsafe_password = None
+            if args.mode == "unsafe":
+                unsafe_password = _get_unsafe_password(args)
+
+            confirm_or_raise(
+                f"About to write long coding ECU={args.ecu} key={args.key} value={args.value} mode={args.mode}.",
+                assume_yes=bool(args.yes),
+                token="APPLY",
+            )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_write",
+                ecu=args.ecu,
+                key=args.key,
+                value=args.value,
+                mode=args.mode,
+                unsafe_password=unsafe_password,
+                log_dir=getattr(args, "log_dir", None),
+            )
+            _print_json(response) if args.json else _print_coding_write(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.coding_cmd == "write-raw":
+            unsafe_password = _get_unsafe_password(args)
+            confirm_or_raise(
+                f"About to perform raw DID write ECU={args.ecu} DID={args.did} HEX={args.hex_payload}.",
+                assume_yes=bool(args.yes),
+                token="APPLY",
+            )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_write_raw",
+                ecu=args.ecu,
+                did=args.did,
+                hex_payload=args.hex_payload,
+                mode=args.mode,
+                unsafe_password=unsafe_password,
+                log_dir=getattr(args, "log_dir", None),
+            )
+            _print_json(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.coding_cmd == "revert":
+            confirm_or_raise(
+                f"About to revert long coding backup_id={args.backup_id}.",
+                assume_yes=bool(args.yes),
+                token="APPLY",
+            )
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="coding_revert",
+                backup_id=args.backup_id,
+            )
+            _print_json(response) if args.json else _print_coding_write(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        raise SystemExit("error: unknown coding command")
+
     raise SystemExit("error: unknown command")
 
 
@@ -792,6 +976,45 @@ def _run_inprocess(
         if op == "adapt_revert":
             assert backup_id is not None
             return {"ok": True, "result": service.revert_adaptation(backup_id)}
+        if op == "coding_list":
+            assert ecu is not None
+            return {"ok": True, "ecu": str(ecu).upper(), "fields": service.list_coding_fields(ecu)}
+        if op == "coding_read":
+            assert ecu is not None
+            assert key is not None
+            return {"ok": True, "item": service.read_coding_field(ecu, key)}
+        if op == "coding_write":
+            assert ecu is not None
+            assert key is not None
+            assert value is not None
+            assert mode is not None
+            return {
+                "ok": True,
+                "result": service.write_coding_field(ecu, key, value, mode=mode, unsafe_password=unsafe_password),
+            }
+        if op == "coding_write_raw":
+            assert ecu is not None
+            assert did is not None
+            assert hex_payload is not None
+            assert mode is not None
+            did_int = parse_did(did)
+            return {
+                "ok": True,
+                "result": service.write_coding_raw(
+                    ecu,
+                    did_int,
+                    hex_payload,
+                    mode=mode,
+                    unsafe_password=unsafe_password,
+                ),
+            }
+        if op == "coding_backup":
+            assert ecu is not None
+            assert key is not None
+            return {"ok": True, "result": service.backup_coding_field(ecu, key, notes=notes)}
+        if op == "coding_revert":
+            assert backup_id is not None
+            return {"ok": True, "result": service.revert_coding(backup_id)}
         return {"ok": False, "error": "invalid operation"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
@@ -832,6 +1055,48 @@ def _print_adapt_read(resp: dict[str, Any]) -> None:
 
 
 def _print_adapt_write(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    result = resp.get("result") or {}
+    if isinstance(result, dict) and result.get("backup_id"):
+        sys.stdout.write(f"OK backup_id={result.get('backup_id')}\n")
+    else:
+        sys.stdout.write("OK\n")
+
+
+def _print_coding_list(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    ecu = str(resp.get("ecu") or "")
+    fields = resp.get("fields") or []
+    sys.stdout.write(f"ECU {ecu} long coding fields:\n")
+    if not isinstance(fields, list) or not fields:
+        sys.stdout.write("(none)\n")
+        return
+    for item in fields:
+        if not isinstance(item, dict):
+            continue
+        sys.stdout.write(
+            f"- {item.get('key')} ({item.get('kind')}, risk={item.get('risk')}, did={item.get('did')}, byte={item.get('byte')}, bit={item.get('bit')}, len={item.get('len')}): {item.get('label')}\n"
+        )
+
+
+def _print_coding_read(resp: dict[str, Any]) -> None:
+    if not resp.get("ok"):
+        sys.stdout.write(f"error: {resp.get('error')}\n")
+        return
+    item = resp.get("item") or {}
+    if not isinstance(item, dict):
+        sys.stdout.write("error: invalid response\n")
+        return
+    sys.stdout.write(
+        f"{item.get('ecu')} {item.get('ecu_name')} {item.get('key')} ({item.get('kind')}, did={item.get('did')}): {item.get('value')}\n"
+    )
+
+
+def _print_coding_write(resp: dict[str, Any]) -> None:
     if not resp.get("ok"):
         sys.stdout.write(f"error: {resp.get('error')}\n")
         return

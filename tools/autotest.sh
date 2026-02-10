@@ -213,6 +213,15 @@ run_case "adapt_write_09_ccwr_true" adapt write --ecu 09 --key comfort_close_win
 run_case "adapt_read_09_ccwr_after" adapt read --ecu 09 --key comfort_close_windows_remote --can "${CAN_IF}" --json || ok=1
 run_case "adapt_revert_000001" adapt revert --backup-id 000001 --yes --can "${CAN_IF}" --json || ok=1
 run_case "adapt_read_09_ccwr_restored" adapt read --ecu 09 --key comfort_close_windows_remote --can "${CAN_IF}" --json || ok=1
+
+run_case "coding_list_09" coding list --ecu 09 --can "${CAN_IF}" --json || ok=1
+run_case "coding_read_09_auto_lock_before" coding read --ecu 09 --key auto_lock --can "${CAN_IF}" --json || ok=1
+run_case "coding_write_09_auto_lock_true" coding write --ecu 09 --key auto_lock --value true --mode advanced --yes --can "${CAN_IF}" --json || ok=1
+run_case "coding_read_09_auto_lock_after" coding read --ecu 09 --key auto_lock --can "${CAN_IF}" --json || ok=1
+run_case "coding_revert_000002" coding revert --backup-id 000002 --yes --can "${CAN_IF}" --json || ok=1
+run_case "coding_read_09_auto_lock_restored" coding read --ecu 09 --key auto_lock --can "${CAN_IF}" --json || ok=1
+run_case "coding_write_09_security_fail" coding write --ecu 09 --key security_demo_protected --value true --mode advanced --yes --can "${CAN_IF}" --json || ok=1
+
 run_case "adapt_write_09_security_fail" adapt write --ecu 09 --key security_demo_protected --value 1 --mode advanced --yes --can "${CAN_IF}" --json || ok=1
 
 unset AUTOSVC_BRAND

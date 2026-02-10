@@ -9,6 +9,7 @@ from autosvc.backups import BackupStore
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
 from autosvc.core.uds.adaptations import AdaptationsManager
+from autosvc.core.uds.longcoding import LongCodingManager
 from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
 from autosvc.core.uds.freeze_frame import FreezeFrameError, list_snapshot_identification, read_snapshot_record
 from autosvc.core.vehicle.discovery import DiscoveryConfig
@@ -40,6 +41,7 @@ class DiagnosticService:
         self._log_dir = log_dir
         self._uds = UdsClient(transport, can_id_mode=can_id_mode)
         self._adaptations: AdaptationsManager | None = None
+        self._longcoding: LongCodingManager | None = None
         self._backups: BackupStore | None = None
 
     def scan_ecus(self) -> list[str]:
@@ -185,43 +187,58 @@ class DiagnosticService:
         mgr = self._adaptations_manager()
         return dict(mgr.revert(backup_id))
 
-    def backup_did(self, ecu: str, did: int, *, notes: str | None = None) -> dict[str, object]:
-        ecu_id = _normalize_ecu(ecu)
-        did_int = parse_did(did)
-        self._uds.set_ecu(ecu_id)
-        raw = _uds_read_did(self._uds, did_int)
-        store = self._backup_store()
-        rec = store.create_snapshot_backup(
-            ecu=ecu_id,
-            did=did_int,
-            key=None,
-            raw=raw,
-            notes=notes,
-            copy_to_log_dir=Path(self._log_dir).expanduser() if self._log_dir else None,
-        )
-        return {"backup_id": rec.backup_id, "ecu": ecu_id, "did": f"{did_int:04X}", "raw_hex": rec.raw_hex}
+    # Long coding (dataset-driven bitfields).
+    def list_coding_fields(self, ecu: str) -> list[dict[str, object]]:
+        mgr = self._longcoding_manager()
+        return [f.to_dict() for f in mgr.list_fields(ecu)]
 
-    def backup_adaptation(self, ecu: str, key: str, *, notes: str | None = None) -> dict[str, object]:
-        mgr = self._adaptations_manager()
-        item = mgr.read_setting(ecu, key)
-        ecu_id = str(item.get("ecu") or "").upper()
-        did_int = int(str(item.get("did") or "0"), 16) & 0xFFFF
-        raw_hex = str(item.get("raw") or "")
-        store = self._backup_store()
-        rec = store.create_snapshot_backup(
-            ecu=ecu_id,
-            did=did_int,
-            key=str(item.get("key") or "") or None,
-            raw=bytes.fromhex(raw_hex),
-            notes=(notes or str(item.get("label") or "") or None),
-            copy_to_log_dir=Path(self._log_dir).expanduser() if self._log_dir else None,
-        )
-        return {"backup_id": rec.backup_id, "ecu": ecu_id, "key": rec.key, "did": f"{did_int:04X}", "raw_hex": rec.raw_hex}
+    def read_coding_field(self, ecu: str, key: str) -> dict[str, object]:
+        mgr = self._longcoding_manager()
+        return dict(mgr.read_field(ecu, key))
 
-    def _backup_store(self) -> BackupStore:
-        if self._backups is None:
-            self._backups = BackupStore()
-        return self._backups
+    def write_coding_field(
+        self,
+        ecu: str,
+        key: str,
+        value: str,
+        *,
+        mode: str,
+        unsafe_password: str | None = None,
+    ) -> dict[str, object]:
+        if str(mode).strip().lower() == "unsafe":
+            from autosvc.unsafe import require_password
+
+            if unsafe_password is None:
+                raise ValueError("unsafe password is required")
+            require_password(unsafe_password)
+        mgr = self._longcoding_manager()
+        return dict(mgr.write_field(ecu, key, value, mode=mode))
+
+    def write_coding_raw(
+        self,
+        ecu: str,
+        did: int,
+        hex_payload: str,
+        *,
+        mode: str,
+        unsafe_password: str | None = None,
+    ) -> dict[str, object]:
+        if str(mode).strip().lower() == "unsafe":
+            from autosvc.unsafe import require_password
+
+            if unsafe_password is None:
+                raise ValueError("unsafe password is required")
+            require_password(unsafe_password)
+        mgr = self._longcoding_manager()
+        return dict(mgr.write_raw(ecu, did, hex_payload, mode=mode))
+
+    def backup_coding_field(self, ecu: str, key: str, *, notes: str | None = None) -> dict[str, object]:
+        mgr = self._longcoding_manager()
+        return dict(mgr.backup_field(ecu, key, notes=notes))
+
+    def revert_coding(self, backup_id: str) -> dict[str, object]:
+        mgr = self._longcoding_manager()
+        return dict(mgr.revert(backup_id))
 
     def _backup_store(self) -> BackupStore:
         if self._backups is None:
@@ -245,6 +262,17 @@ class DiagnosticService:
                 log_dir=self._log_dir,
             )
         return self._adaptations
+
+    def _longcoding_manager(self) -> LongCodingManager:
+        if self._longcoding is None:
+            self._longcoding = LongCodingManager(
+                self._uds,
+                brand=self._brand,
+                datasets_dir=self._datasets_dir,
+                backups=self._backup_store(),
+                log_dir=self._log_dir,
+            )
+        return self._longcoding
 
     def _attach_freeze_frames(self, ecu: str, items: list[dict[str, object]]) -> None:
         # Freeze-frame is optional and ECU-dependent. Failure to retrieve it
