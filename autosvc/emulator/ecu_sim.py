@@ -352,12 +352,12 @@ def main(argv: list[str] | None = None) -> None:
             # - 0x1237: u16 setting (big-endian)
             # - 0x1337: write-protected (simulated security requirement)
             dids = {
-                0x1234: b" ",
+                0x1234: b"\x00",
                 0x1237: int(42).to_bytes(2, byteorder="big", signed=False),
-                0x1337: b" ",
+                0x1337: b"\x00",
                 # Long coding demo:
-                0x0600: b"    ",
-                0x0601: b" ",
+                0x0600: b"\x00\x00\x00\x00",
+                0x0601: b"\x00",
             }
             protected = {0x1337, 0x0601}
         ecus.append(
