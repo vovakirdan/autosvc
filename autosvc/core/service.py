@@ -8,6 +8,7 @@ from autosvc.core.dtc.registry import get_modules
 from autosvc.backups import BackupStore
 from autosvc.core.transport.base import CanTransport
 from autosvc.core.uds.client import UdsClient
+from autosvc.core.uds.security_algo import SecurityAlgoError, load_security_algo
 from autosvc.core.uds.adaptations import AdaptationsManager
 from autosvc.core.uds.longcoding import LongCodingManager
 from autosvc.core.uds.did import decode_did, format_did, parse_did, read_did as _uds_read_did
@@ -118,6 +119,61 @@ class DiagnosticService:
             out.append(self.read_did(ecu, did))
         return out
 
+    # SecurityAccess (0x27)
+    def security_request_seed(self, ecu: str, level: int) -> dict[str, object]:
+        ecu_id = _normalize_ecu(ecu)
+        lvl = int(level) & 0xFF
+        self._uds.set_ecu(ecu_id)
+        seed = self._uds.security_access_request_seed(lvl)
+        return {"ecu": ecu_id, "level": f"0x{lvl:02X}", "seed_hex": seed.hex().upper()}
+
+    def security_unlock(
+        self,
+        ecu: str,
+        seed_level: int,
+        *,
+        key_hex: str | None = None,
+        algo_module: str | None = None,
+    ) -> dict[str, object]:
+        """Generic SecurityAccess unlock flow.
+
+        - Requests seed with sub-function `seed_level` (typically odd).
+        - Sends key with sub-function `seed_level + 1`.
+
+        autosvc does NOT ship any OEM algorithms.
+        """
+
+        ecu_id = _normalize_ecu(ecu)
+        seed_lvl = int(seed_level) & 0xFF
+        key_lvl = (seed_lvl + 1) & 0xFF
+
+        self._uds.set_ecu(ecu_id)
+        seed = self._uds.security_access_request_seed(seed_lvl)
+
+        used_algo = False
+        if key_hex is None:
+            algo = load_security_algo(algo_module)
+            if algo is None:
+                raise ValueError("key is required (pass key_hex or configure AUTOSVC_SECURITY_ALGO)")
+            try:
+                key = algo.compute_key(seed, level=seed_lvl, ecu=ecu_id)
+            except SecurityAlgoError as exc:
+                raise ValueError(str(exc)) from exc
+            used_algo = True
+        else:
+            key = _parse_hex_bytes(key_hex)
+
+        self._uds.security_access_send_key(key_lvl, key)
+
+        return {
+            "ecu": ecu_id,
+            "seed_level": f"0x{seed_lvl:02X}",
+            "key_level": f"0x{key_lvl:02X}",
+            "seed_hex": seed.hex().upper(),
+            "key_len": len(key),
+            "used_algo": bool(used_algo),
+        }
+
     # Adaptations (safe ECU configuration changes) are implemented via
     # dataset-driven profiles and explicit backup/revert safety mechanisms.
     def list_adaptations(self, ecu: str) -> list[dict[str, object]]:
@@ -136,6 +192,9 @@ class DiagnosticService:
         *,
         mode: str,
         unsafe_password: str | None = None,
+        security_level: int | None = None,
+        security_key_hex: str | None = None,
+        security_algo_module: str | None = None,
     ) -> dict[str, object]:
         if str(mode).strip().lower() == "unsafe":
             from autosvc.unsafe import require_password
@@ -143,8 +202,16 @@ class DiagnosticService:
             if unsafe_password is None:
                 raise ValueError("unsafe password is required")
             require_password(unsafe_password)
+        ecu_id = _normalize_ecu(ecu)
+        if security_level is not None:
+            self.security_unlock(
+                ecu_id,
+                int(security_level),
+                key_hex=security_key_hex,
+                algo_module=security_algo_module,
+            )
         mgr = self._adaptations_manager()
-        return dict(mgr.write_setting(ecu, key, value, mode=mode))
+        return dict(mgr.write_setting(ecu_id, key, value, mode=mode))
 
     def write_adaptation_raw(
         self,
@@ -154,6 +221,9 @@ class DiagnosticService:
         *,
         mode: str,
         unsafe_password: str | None = None,
+        security_level: int | None = None,
+        security_key_hex: str | None = None,
+        security_algo_module: str | None = None,
     ) -> dict[str, object]:
         if str(mode).strip().lower() == "unsafe":
             from autosvc.unsafe import require_password
@@ -161,8 +231,16 @@ class DiagnosticService:
             if unsafe_password is None:
                 raise ValueError("unsafe password is required")
             require_password(unsafe_password)
+        ecu_id = _normalize_ecu(ecu)
+        if security_level is not None:
+            self.security_unlock(
+                ecu_id,
+                int(security_level),
+                key_hex=security_key_hex,
+                algo_module=security_algo_module,
+            )
         mgr = self._adaptations_manager()
-        return dict(mgr.write_raw(ecu, did, hex_payload, mode=mode))
+        return dict(mgr.write_raw(ecu_id, did, hex_payload, mode=mode))
 
     def backup_did(self, ecu: str, did: int, *, notes: str | None = None) -> dict[str, object]:
         ecu_id = _normalize_ecu(ecu)
@@ -204,6 +282,9 @@ class DiagnosticService:
         *,
         mode: str,
         unsafe_password: str | None = None,
+        security_level: int | None = None,
+        security_key_hex: str | None = None,
+        security_algo_module: str | None = None,
     ) -> dict[str, object]:
         if str(mode).strip().lower() == "unsafe":
             from autosvc.unsafe import require_password
@@ -211,8 +292,16 @@ class DiagnosticService:
             if unsafe_password is None:
                 raise ValueError("unsafe password is required")
             require_password(unsafe_password)
+        ecu_id = _normalize_ecu(ecu)
+        if security_level is not None:
+            self.security_unlock(
+                ecu_id,
+                int(security_level),
+                key_hex=security_key_hex,
+                algo_module=security_algo_module,
+            )
         mgr = self._longcoding_manager()
-        return dict(mgr.write_field(ecu, key, value, mode=mode))
+        return dict(mgr.write_field(ecu_id, key, value, mode=mode))
 
     def write_coding_raw(
         self,
@@ -222,6 +311,9 @@ class DiagnosticService:
         *,
         mode: str,
         unsafe_password: str | None = None,
+        security_level: int | None = None,
+        security_key_hex: str | None = None,
+        security_algo_module: str | None = None,
     ) -> dict[str, object]:
         if str(mode).strip().lower() == "unsafe":
             from autosvc.unsafe import require_password
@@ -229,8 +321,16 @@ class DiagnosticService:
             if unsafe_password is None:
                 raise ValueError("unsafe password is required")
             require_password(unsafe_password)
+        ecu_id = _normalize_ecu(ecu)
+        if security_level is not None:
+            self.security_unlock(
+                ecu_id,
+                int(security_level),
+                key_hex=security_key_hex,
+                algo_module=security_algo_module,
+            )
         mgr = self._longcoding_manager()
-        return dict(mgr.write_raw(ecu, did, hex_payload, mode=mode))
+        return dict(mgr.write_raw(ecu_id, did, hex_payload, mode=mode))
 
     def backup_coding_field(self, ecu: str, key: str, *, notes: str | None = None) -> dict[str, object]:
         mgr = self._longcoding_manager()
@@ -308,6 +408,20 @@ def _normalize_ecu(value: str) -> str:
     if ecu_int < 0 or ecu_int > 0xFF:
         raise ValueError("ecu out of range")
     return f"{ecu_int:02X}"
+
+
+def _parse_hex_bytes(value: str) -> bytes:
+    raw = (value or "").strip()
+    if raw.startswith("0x") or raw.startswith("0X"):
+        raw = raw[2:]
+    if not raw:
+        return b""
+    if len(raw) % 2 != 0:
+        raise ValueError("hex must have even length")
+    try:
+        return bytes.fromhex(raw)
+    except Exception as exc:
+        raise ValueError("invalid hex") from exc
 
 
 def _resolve_ecu_name(ecu: str, brand: str | None) -> str:

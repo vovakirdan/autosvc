@@ -27,6 +27,28 @@ from autosvc.logging import TRACE_LEVEL, parse_log_level, setup_logging, trace_c
 log = logging.getLogger(__name__)
 
 
+def _redact_sensitive_argv(argv: list[str]) -> list[str]:
+    out: list[str] = []
+    redact_next = False
+    redact_flags = {"--key-hex", "--security-key-hex"}
+    for item in argv:
+        if redact_next:
+            out.append("<redacted>")
+            redact_next = False
+            continue
+        for flag in redact_flags:
+            if item == flag:
+                out.append(item)
+                redact_next = True
+                break
+            if item.startswith(flag + "="):
+                out.append(flag + "=<redacted>")
+                break
+        else:
+            out.append(item)
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="autosvc", description="Automotive service diagnostics (CLI/TUI/daemon).")
     _add_logging_args(parser)
@@ -101,6 +123,56 @@ def main(argv: list[str] | None = None) -> None:
     _add_can_args(did_read_p)
     _add_connect_arg(did_read_p)
     _add_can_id_mode_arg(did_read_p)
+
+    security_p = sub.add_parser("security", help="UDS SecurityAccess (0x27)")
+    _add_logging_args(security_p)
+    security_sub = security_p.add_subparsers(dest="security_cmd", required=True)
+
+    sec_seed_p = security_sub.add_parser("seed", help="Request a SecurityAccess seed (0x27 requestSeed)")
+    _add_logging_args(sec_seed_p)
+    sec_seed_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    sec_seed_p.add_argument(
+        "--level",
+        required=True,
+        help="Seed request level/sub-function as hex (typically odd, e.g. 01 or 0x01)",
+    )
+    sec_seed_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(sec_seed_p)
+    _add_connect_arg(sec_seed_p)
+    _add_can_id_mode_arg(sec_seed_p)
+
+    sec_unlock_p = security_sub.add_parser("unlock", help="Unlock SecurityAccess by sending a key (0x27 sendKey)")
+    _add_logging_args(sec_unlock_p)
+    sec_unlock_p.add_argument("--ecu", required=True, help="ECU address as hex (e.g. 09)")
+    sec_unlock_p.add_argument(
+        "--level",
+        required=True,
+        help="Seed request level/sub-function as hex (typically odd, e.g. 01). Key sub-function is level+1.",
+    )
+    sec_unlock_p.add_argument(
+        "--key-hex",
+        default=None,
+        help="Key bytes as hex. WARNING: passing secrets on the command line may leak via shell history.",
+    )
+    sec_unlock_p.add_argument(
+        "--key-hex-stdin",
+        action="store_true",
+        help="Read key hex from stdin (recommended; avoids shell history).",
+    )
+    sec_unlock_p.add_argument(
+        "--key-prompt",
+        action="store_true",
+        help="Prompt for key hex (no echo).",
+    )
+    sec_unlock_p.add_argument(
+        "--algo-module",
+        default=None,
+        help="Optional user-provided Python module name or path to .py implementing compute_key(seed, level, ecu).",
+    )
+    sec_unlock_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
+    _add_can_args(sec_unlock_p)
+    _add_connect_arg(sec_unlock_p)
+    _add_can_id_mode_arg(sec_unlock_p)
 
     watch_p = sub.add_parser("watch", help="Watch live DIDs and stream events (JSONL)")
     _add_logging_args(watch_p)
@@ -178,6 +250,31 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
     )
+    adapt_write_p.add_argument(
+        "--security-level",
+        default=None,
+        help="Optional SecurityAccess seed level (hex, e.g. 01). If set, autosvc will attempt to unlock before writing.",
+    )
+    adapt_write_p.add_argument(
+        "--security-key-hex",
+        default=None,
+        help="SecurityAccess key as hex (WARNING: may leak via shell history).",
+    )
+    adapt_write_p.add_argument(
+        "--security-key-hex-stdin",
+        action="store_true",
+        help="Read SecurityAccess key hex from stdin (recommended).",
+    )
+    adapt_write_p.add_argument(
+        "--security-key-prompt",
+        action="store_true",
+        help="Prompt for SecurityAccess key hex (no echo).",
+    )
+    adapt_write_p.add_argument(
+        "--security-algo-module",
+        default=None,
+        help="Optional user-provided Python module name or .py path implementing compute_key(seed, level, ecu).",
+    )
     adapt_write_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(adapt_write_p)
     _add_connect_arg(adapt_write_p)
@@ -194,6 +291,31 @@ def main(argv: list[str] | None = None) -> None:
         "--unsafe-password-stdin",
         action="store_true",
         help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
+    adapt_raw_p.add_argument(
+        "--security-level",
+        default=None,
+        help="Optional SecurityAccess seed level (hex, e.g. 01). If set, autosvc will attempt to unlock before writing.",
+    )
+    adapt_raw_p.add_argument(
+        "--security-key-hex",
+        default=None,
+        help="SecurityAccess key as hex (WARNING: may leak via shell history).",
+    )
+    adapt_raw_p.add_argument(
+        "--security-key-hex-stdin",
+        action="store_true",
+        help="Read SecurityAccess key hex from stdin (recommended).",
+    )
+    adapt_raw_p.add_argument(
+        "--security-key-prompt",
+        action="store_true",
+        help="Prompt for SecurityAccess key hex (no echo).",
+    )
+    adapt_raw_p.add_argument(
+        "--security-algo-module",
+        default=None,
+        help="Optional user-provided Python module name or .py path implementing compute_key(seed, level, ecu).",
     )
     adapt_raw_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(adapt_raw_p)
@@ -252,6 +374,31 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
     )
+    coding_write_p.add_argument(
+        "--security-level",
+        default=None,
+        help="Optional SecurityAccess seed level (hex, e.g. 01). If set, autosvc will attempt to unlock before writing.",
+    )
+    coding_write_p.add_argument(
+        "--security-key-hex",
+        default=None,
+        help="SecurityAccess key as hex (WARNING: may leak via shell history).",
+    )
+    coding_write_p.add_argument(
+        "--security-key-hex-stdin",
+        action="store_true",
+        help="Read SecurityAccess key hex from stdin (recommended).",
+    )
+    coding_write_p.add_argument(
+        "--security-key-prompt",
+        action="store_true",
+        help="Prompt for SecurityAccess key hex (no echo).",
+    )
+    coding_write_p.add_argument(
+        "--security-algo-module",
+        default=None,
+        help="Optional user-provided Python module name or .py path implementing compute_key(seed, level, ecu).",
+    )
     coding_write_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(coding_write_p)
     _add_connect_arg(coding_write_p)
@@ -268,6 +415,31 @@ def main(argv: list[str] | None = None) -> None:
         "--unsafe-password-stdin",
         action="store_true",
         help="Read unsafe password from stdin (no echo). If not set, you will be prompted.",
+    )
+    coding_raw_p.add_argument(
+        "--security-level",
+        default=None,
+        help="Optional SecurityAccess seed level (hex, e.g. 01). If set, autosvc will attempt to unlock before writing.",
+    )
+    coding_raw_p.add_argument(
+        "--security-key-hex",
+        default=None,
+        help="SecurityAccess key as hex (WARNING: may leak via shell history).",
+    )
+    coding_raw_p.add_argument(
+        "--security-key-hex-stdin",
+        action="store_true",
+        help="Read SecurityAccess key hex from stdin (recommended).",
+    )
+    coding_raw_p.add_argument(
+        "--security-key-prompt",
+        action="store_true",
+        help="Prompt for SecurityAccess key hex (no echo).",
+    )
+    coding_raw_p.add_argument(
+        "--security-algo-module",
+        default=None,
+        help="Optional user-provided Python module name or .py path implementing compute_key(seed, level, ecu).",
     )
     coding_raw_p.add_argument("--json", action="store_true", help="Output deterministic JSON (for tests)")
     _add_can_args(coding_raw_p)
@@ -308,6 +480,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if getattr(args, "log_dir", None):
             argv_for_meta = [parser.prog] + (list(argv) if argv is not None else sys.argv[1:])
+            argv_for_meta = _redact_sensitive_argv(argv_for_meta)
             runlog = create_run_log_dir(str(args.log_dir), trace_id=trace_id, argv=argv_for_meta)
             if not log_file:
                 log_file = str(runlog.log_path)
@@ -474,6 +647,39 @@ def _dispatch(args: argparse.Namespace) -> None:
         _print_json(response)
         raise SystemExit(0 if response.get("ok") else 1)
 
+    if args.cmd == "security":
+        connect = getattr(args, "connect", None) or args.global_connect
+        if connect:
+            _print_json({"ok": False, "error": "security access is not available in daemon mode"})
+            raise SystemExit(1)
+
+        level_int = _parse_hex_int(getattr(args, "level", ""), bits=8, name="level")
+
+        if args.security_cmd == "seed":
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="security_seed",
+                ecu=args.ecu,
+                security_level=level_int,
+            )
+            _print_json(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
+        if args.security_cmd == "unlock":
+            key_hex = _read_key_hex_from_args(args)
+            response = _run_inprocess(
+                args.can,
+                can_id_mode=args.can_id_mode,
+                op="security_unlock",
+                ecu=args.ecu,
+                security_level=level_int,
+                security_key_hex=key_hex,
+                security_algo_module=getattr(args, "algo_module", None),
+            )
+            _print_json(response)
+            raise SystemExit(0 if response.get("ok") else 1)
+
     if args.cmd == "watch":
         connect = getattr(args, "connect", None) or args.global_connect
         items = _parse_watch_items(args.items)
@@ -546,6 +752,11 @@ def _dispatch(args: argparse.Namespace) -> None:
                 token="APPLY",
             )
 
+            sec_level_int = None
+            if getattr(args, "security_level", None):
+                sec_level_int = _parse_hex_int(str(args.security_level), bits=8, name="security-level")
+            sec_key_hex = _read_security_key_hex_from_args(args)
+
             response = _run_inprocess(
                 args.can,
                 can_id_mode=args.can_id_mode,
@@ -556,6 +767,9 @@ def _dispatch(args: argparse.Namespace) -> None:
                 mode=args.mode,
                 unsafe_password=unsafe_password,
                 log_dir=getattr(args, "log_dir", None),
+                security_level=sec_level_int,
+                security_key_hex=sec_key_hex,
+                security_algo_module=getattr(args, "security_algo_module", None),
             )
             if args.json:
                 _print_json(response)
@@ -570,6 +784,11 @@ def _dispatch(args: argparse.Namespace) -> None:
                 assume_yes=bool(args.yes),
                 token="APPLY",
             )
+            sec_level_int = None
+            if getattr(args, "security_level", None):
+                sec_level_int = _parse_hex_int(str(args.security_level), bits=8, name="security-level")
+            sec_key_hex = _read_security_key_hex_from_args(args)
+
             response = _run_inprocess(
                 args.can,
                 can_id_mode=args.can_id_mode,
@@ -580,6 +799,9 @@ def _dispatch(args: argparse.Namespace) -> None:
                 mode=args.mode,
                 unsafe_password=unsafe_password,
                 log_dir=getattr(args, "log_dir", None),
+                security_level=sec_level_int,
+                security_key_hex=sec_key_hex,
+                security_algo_module=getattr(args, "security_algo_module", None),
             )
             if args.json:
                 _print_json(response)
@@ -678,6 +900,11 @@ def _dispatch(args: argparse.Namespace) -> None:
                 assume_yes=bool(args.yes),
                 token="APPLY",
             )
+            sec_level_int = None
+            if getattr(args, "security_level", None):
+                sec_level_int = _parse_hex_int(str(args.security_level), bits=8, name="security-level")
+            sec_key_hex = _read_security_key_hex_from_args(args)
+
             response = _run_inprocess(
                 args.can,
                 can_id_mode=args.can_id_mode,
@@ -688,6 +915,9 @@ def _dispatch(args: argparse.Namespace) -> None:
                 mode=args.mode,
                 unsafe_password=unsafe_password,
                 log_dir=getattr(args, "log_dir", None),
+                security_level=sec_level_int,
+                security_key_hex=sec_key_hex,
+                security_algo_module=getattr(args, "security_algo_module", None),
             )
             _print_json(response) if args.json else _print_coding_write(response)
             raise SystemExit(0 if response.get("ok") else 1)
@@ -699,6 +929,11 @@ def _dispatch(args: argparse.Namespace) -> None:
                 assume_yes=bool(args.yes),
                 token="APPLY",
             )
+            sec_level_int = None
+            if getattr(args, "security_level", None):
+                sec_level_int = _parse_hex_int(str(args.security_level), bits=8, name="security-level")
+            sec_key_hex = _read_security_key_hex_from_args(args)
+
             response = _run_inprocess(
                 args.can,
                 can_id_mode=args.can_id_mode,
@@ -709,6 +944,9 @@ def _dispatch(args: argparse.Namespace) -> None:
                 mode=args.mode,
                 unsafe_password=unsafe_password,
                 log_dir=getattr(args, "log_dir", None),
+                security_level=sec_level_int,
+                security_key_hex=sec_key_hex,
+                security_algo_module=getattr(args, "security_algo_module", None),
             )
             _print_json(response)
             raise SystemExit(0 if response.get("ok") else 1)
@@ -884,6 +1122,9 @@ def _run_inprocess(
     unsafe_password: str | None = None,
     notes: str | None = None,
     log_dir: str | None = None,
+    security_level: int | None = None,
+    security_key_hex: str | None = None,
+    security_algo_module: str | None = None,
 ) -> dict[str, Any]:
     transport: SocketCanTransport | None = None
     try:
@@ -932,6 +1173,22 @@ def _run_inprocess(
             assert did is not None
             did_int = parse_did(did)
             return {"ok": True, "item": service.read_did(ecu, did_int)}
+        if op == "security_seed":
+            assert ecu is not None
+            assert security_level is not None
+            return {"ok": True, "result": service.security_request_seed(ecu, int(security_level))}
+        if op == "security_unlock":
+            assert ecu is not None
+            assert security_level is not None
+            return {
+                "ok": True,
+                "result": service.security_unlock(
+                    ecu,
+                    int(security_level),
+                    key_hex=security_key_hex,
+                    algo_module=security_algo_module,
+                ),
+            }
         if op == "adapt_list":
             assert ecu is not None
             return {"ok": True, "ecu": str(ecu).upper(), "settings": service.list_adaptations(ecu)}
@@ -946,7 +1203,16 @@ def _run_inprocess(
             assert mode is not None
             return {
                 "ok": True,
-                "result": service.write_adaptation(ecu, key, value, mode=mode, unsafe_password=unsafe_password),
+                "result": service.write_adaptation(
+                    ecu,
+                    key,
+                    value,
+                    mode=mode,
+                    unsafe_password=unsafe_password,
+                    security_level=security_level,
+                    security_key_hex=security_key_hex,
+                    security_algo_module=security_algo_module,
+                ),
             }
         if op == "adapt_write_raw":
             assert ecu is not None
@@ -962,6 +1228,9 @@ def _run_inprocess(
                     hex_payload,
                     mode=mode,
                     unsafe_password=unsafe_password,
+                    security_level=security_level,
+                    security_key_hex=security_key_hex,
+                    security_algo_module=security_algo_module,
                 ),
             }
         if op == "adapt_backup":
@@ -990,7 +1259,16 @@ def _run_inprocess(
             assert mode is not None
             return {
                 "ok": True,
-                "result": service.write_coding_field(ecu, key, value, mode=mode, unsafe_password=unsafe_password),
+                "result": service.write_coding_field(
+                    ecu,
+                    key,
+                    value,
+                    mode=mode,
+                    unsafe_password=unsafe_password,
+                    security_level=security_level,
+                    security_key_hex=security_key_hex,
+                    security_algo_module=security_algo_module,
+                ),
             }
         if op == "coding_write_raw":
             assert ecu is not None
@@ -1006,6 +1284,9 @@ def _run_inprocess(
                     hex_payload,
                     mode=mode,
                     unsafe_password=unsafe_password,
+                    security_level=security_level,
+                    security_key_hex=security_key_hex,
+                    security_algo_module=security_algo_module,
                 ),
             }
         if op == "coding_backup":
@@ -1105,6 +1386,66 @@ def _print_coding_write(resp: dict[str, Any]) -> None:
         sys.stdout.write(f"OK backup_id={result.get('backup_id')}\n")
     else:
         sys.stdout.write("OK\n")
+
+
+def _parse_hex_int(value: str, *, bits: int, name: str) -> int:
+    raw = (value or "").strip()
+    if raw.startswith("0x") or raw.startswith("0X"):
+        raw = raw[2:]
+    if not raw:
+        raise SystemExit(f"error: --{name} is required")
+    try:
+        n = int(raw, 16)
+    except Exception as exc:
+        raise SystemExit(f"error: --{name} must be hex") from exc
+    maxv = (1 << int(bits)) - 1
+    if n < 0 or n > maxv:
+        raise SystemExit(f"error: --{name} out of range")
+    return int(n)
+
+
+def _read_key_hex_from_args(args: argparse.Namespace) -> str | None:
+    key_hex = getattr(args, "key_hex", None)
+    if key_hex:
+        return str(key_hex).strip()
+
+    if bool(getattr(args, "key_hex_stdin", False)):
+        data = sys.stdin.read().strip()
+        if not data:
+            raise SystemExit("error: empty key from stdin")
+        return data
+
+    if bool(getattr(args, "key_prompt", False)):
+        from getpass import getpass
+
+        data = getpass("SecurityAccess key (hex): ")
+        if not data:
+            raise SystemExit("error: key is required")
+        return data.strip()
+
+    return None
+
+
+def _read_security_key_hex_from_args(args: argparse.Namespace) -> str | None:
+    key_hex = getattr(args, "security_key_hex", None)
+    if key_hex:
+        return str(key_hex).strip()
+
+    if bool(getattr(args, "security_key_hex_stdin", False)):
+        data = sys.stdin.read().strip()
+        if not data:
+            raise SystemExit("error: empty security key from stdin")
+        return data
+
+    if bool(getattr(args, "security_key_prompt", False)):
+        from getpass import getpass
+
+        data = getpass("SecurityAccess key (hex): ")
+        if not data:
+            raise SystemExit("error: security key is required")
+        return data.strip()
+
+    return None
 
 
 def _parse_watch_items(value: str) -> list[WatchItem]:

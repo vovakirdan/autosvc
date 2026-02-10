@@ -10,6 +10,7 @@ from autosvc.backups import BackupStore
 from autosvc.core.uds.client import UdsClient, UdsError, UdsNegativeResponseError
 from autosvc.core.uds.did import read_did as uds_read_did
 from autosvc.core.uds.security import is_security_nrc
+from autosvc.core.uds.nrc import nrc_name
 
 
 class AdaptationsError(Exception):
@@ -230,10 +231,14 @@ class AdaptationsManager:
             self._uds.write_did(did, payload)
         except UdsNegativeResponseError as exc:
             if is_security_nrc(exc.nrc):
+                name = nrc_name(exc.nrc)
+                suffix = f" ({name})" if name else ""
                 raise AdaptationsError(
-                    f"security access required for DID {int(did) & 0xFFFF:04X} (nrc=0x{exc.nrc:02X})"
+                    f"security access required for DID {int(did) & 0xFFFF:04X} (nrc=0x{exc.nrc:02X}{suffix})"
                 ) from exc
-            raise AdaptationsError(f"write failed (nrc=0x{exc.nrc:02X})") from exc
+            name = nrc_name(exc.nrc)
+            suffix = f" ({name})" if name else ""
+            raise AdaptationsError(f"write failed (nrc=0x{exc.nrc:02X}{suffix})") from exc
         except UdsError as exc:
             raise AdaptationsError(str(exc)) from exc
 

@@ -10,6 +10,7 @@ from autosvc.core.datasets.models import LongCodingFieldSpec, LongCodingProfile
 from autosvc.core.uds.client import UdsClient, UdsError, UdsNegativeResponseError
 from autosvc.core.uds.did import read_did as uds_read_did
 from autosvc.core.uds.security import is_security_nrc
+from autosvc.core.uds.nrc import nrc_name
 
 
 class LongCodingError(Exception):
@@ -266,10 +267,14 @@ class LongCodingManager:
             self._uds.write_did(did, payload)
         except UdsNegativeResponseError as exc:
             if is_security_nrc(exc.nrc):
+                name = nrc_name(exc.nrc)
+                suffix = f" ({name})" if name else ""
                 raise LongCodingError(
-                    f"security access required for DID {int(did) & 0xFFFF:04X} (nrc=0x{exc.nrc:02X})"
+                    f"security access required for DID {int(did) & 0xFFFF:04X} (nrc=0x{exc.nrc:02X}{suffix})"
                 ) from exc
-            raise LongCodingError(f"write failed (nrc=0x{exc.nrc:02X})") from exc
+            name = nrc_name(exc.nrc)
+            suffix = f" ({name})" if name else ""
+            raise LongCodingError(f"write failed (nrc=0x{exc.nrc:02X}{suffix})") from exc
         except UdsError as exc:
             raise LongCodingError(str(exc)) from exc
 

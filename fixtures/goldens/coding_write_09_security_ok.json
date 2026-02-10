@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "result": {
+    "backup_id": "000005",
+    "bit": 0,
+    "byte": 0,
+    "did": "0601",
+    "diff": {
+      "changed": true
+    },
+    "ecu": "09",
+    "ecu_name": "Central Electrics (demo)",
+    "key": "security_demo_protected",
+    "kind": "bool",
+    "label": "Protected demo bit (security required)",
+    "len": 1,
+    "mode": "advanced",
+    "new": {
+      "raw": "01",
+      "value": true
+    },
+    "old": {
+      "raw": "00",
+      "value": false
+    },
+    "risk": "risky"
+  }
+}

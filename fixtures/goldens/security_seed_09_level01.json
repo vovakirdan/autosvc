@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "result": {
+    "ecu": "09",
+    "level": "0x01",
+    "seed_hex": "0901CAFE"
+  }
+}
