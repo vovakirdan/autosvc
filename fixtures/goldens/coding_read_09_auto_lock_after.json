@@ -1,0 +1,19 @@
+{
+  "item": {
+    "bit": 0,
+    "byte": 0,
+    "did": "0600",
+    "ecu": "09",
+    "ecu_name": "Central Electrics (demo)",
+    "key": "auto_lock",
+    "kind": "bool",
+    "label": "Auto-lock doors while driving",
+    "len": 1,
+    "needs_security_access": false,
+    "notes": "Demo bitfield in emulator long coding DID 0600",
+    "raw": "01000000",
+    "risk": "risky",
+    "value": true
+  },
+  "ok": true
+}

@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "result": {
+    "backup_id": "000002",
+    "bit": 0,
+    "byte": 0,
+    "did": "0600",
+    "diff": {
+      "changed": true
+    },
+    "ecu": "09",
+    "ecu_name": "Central Electrics (demo)",
+    "key": "auto_lock",
+    "kind": "bool",
+    "label": "Auto-lock doors while driving",
+    "len": 1,
+    "mode": "advanced",
+    "new": {
+      "raw": "01000000",
+      "value": true
+    },
+    "old": {
+      "raw": "00000000",
+      "value": false
+    },
+    "risk": "risky"
+  }
+}
